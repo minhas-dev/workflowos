@@ -39,12 +39,11 @@ import MarkdownRenderer from "../components/MarkdownRenderer";
 
 
 const SAVED_PROMPTS = [
-  "Summarize this document with key takeaways",
-  "Extract action items and owners",
-  "Rewrite this for an executive audience",
-  "Find gaps, risks, and unanswered questions",
+  "Create ecommerce sprint",
+  "Generate launch plan",
+  "Summarize uploaded requirements",
+  "Find overdue risks",
   "What tasks are overdue in my projects?",
-  "Which project needs my attention most?",
   "Give me a summary of this week's progress",
   "What should I focus on today?",
 ];

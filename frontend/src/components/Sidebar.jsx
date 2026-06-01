@@ -21,6 +21,7 @@ import {
   Globe2,
   MessageSquare,
   ShieldAlert,
+  Sparkles,
 } from "lucide-react";
 
 import {
@@ -284,6 +285,18 @@ export default function Sidebar({
       name: "Reports",
       icon: FileText,
       path: "/executive-reports",
+      roles: [
+        "Admin",
+        "Manager",
+        "Team Member",
+        "Freelancer",
+        "Viewer",
+      ],
+    },
+    {
+      name: "Summarizer",
+      icon: Sparkles,
+      path: "/summarizer",
       roles: [
         "Admin",
         "Manager",

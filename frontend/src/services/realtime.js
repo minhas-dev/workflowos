@@ -1,10 +1,13 @@
-const API_URL = import.meta.env.VITE_API_URL || "";
+import { API_BASE_URL } from "./api";
 
 function socketUrl(projectId) {
   const token =
     localStorage.getItem("token") ||
     localStorage.getItem("workflowos_token");
-  const base = API_URL.replace(/^http/, "ws");
+  const base =
+    API_BASE_URL.startsWith("http")
+      ? API_BASE_URL.replace(/^http/, "ws")
+      : `${window.location.origin.replace(/^http/, "ws")}${API_BASE_URL}`;
   const params = new URLSearchParams({ token });
   if (projectId) params.set("project_id", projectId);
   return `${base}/realtime/ws?${params.toString()}`;

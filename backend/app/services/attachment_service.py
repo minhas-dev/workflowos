@@ -11,6 +11,7 @@ from uuid import uuid4
 from fastapi import HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.models.attachment import Attachment
 from app.models.project import Project
 from app.models.task import Task
@@ -24,7 +25,7 @@ from app.services.activity_service import create_activity
 # STORAGE LAYOUT (filesystem-based, S3-ready)
 # ============================================================
 
-UPLOAD_ROOT = Path(__file__).resolve().parents[2] / "uploads"
+UPLOAD_ROOT = settings.upload_root
 TASKS_DIR = UPLOAD_ROOT / "tasks"
 PROJECTS_DIR = UPLOAD_ROOT / "projects"
 TEMP_DIR = UPLOAD_ROOT / "temp"

@@ -15,6 +15,7 @@ import toast from "react-hot-toast";
 
 import MainLayout from "../layouts/MainLayout";
 import api from "../services/api";
+import { PageSkeleton } from "../components/ui/SkeletonLoader";
 
 
 const fallbackTypes = [
@@ -190,10 +191,7 @@ export default function ExecutiveReportsPage() {
   if (loading) {
     return (
       <MainLayout>
-        <div className="grid gap-4">
-          <div className="h-32 animate-pulse rounded-lg bg-slate-200 dark:bg-slate-800" />
-          <div className="h-[520px] animate-pulse rounded-lg bg-slate-200 dark:bg-slate-800" />
-        </div>
+        <PageSkeleton />
       </MainLayout>
     );
   }

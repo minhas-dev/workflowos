@@ -120,10 +120,37 @@ from app.api.routes.ai_copilot import router as ai_copilot_router
 from app.api.routes.analytics import router as analytics_router
 from app.api.routes.executive_reports import router as executive_reports_router
 from app.api.routes.demo import router as demo_router
+from app.api.routes.summarizer import router as summarizer_router
 
 
 
 logger = logging.getLogger(__name__)
+
+
+def _column_type(kind: str, default: str | int | None = None) -> str:
+    is_postgres = engine.dialect.name.startswith("postgres")
+    type_map = {
+        "string": "VARCHAR",
+        "text": "TEXT",
+        "integer": "INTEGER",
+        "float": "FLOAT",
+        "date": "DATE",
+        "datetime": "TIMESTAMP" if is_postgres else "DATETIME",
+        "boolean": "BOOLEAN",
+    }
+    sql = type_map[kind]
+
+    if default is None:
+        return sql
+
+    if kind == "boolean":
+        value = "true" if is_postgres and bool(default) else "false" if is_postgres else str(int(bool(default)))
+        return f"{sql} DEFAULT {value}"
+
+    if isinstance(default, str):
+        return f"{sql} DEFAULT '{default}'"
+
+    return f"{sql} DEFAULT {default}"
 
 
 # =========================
@@ -145,15 +172,15 @@ def upgrade_project_table():
     }
 
     columns_to_add = {
-        "status": "VARCHAR DEFAULT 'active'",
-        "start_date": "DATE",
-        "end_date": "DATE",
-        "progress": "INTEGER DEFAULT 0",
-        "owner_id": "INTEGER",
-        "created_at": "DATETIME",
-        "email_sent": "BOOLEAN DEFAULT 0",
-        "last_alert_at": "DATETIME",
-        "alert_level": "VARCHAR DEFAULT 'none'",
+        "status": _column_type("string", "active"),
+        "start_date": _column_type("date"),
+        "end_date": _column_type("date"),
+        "progress": _column_type("integer", 0),
+        "owner_id": _column_type("integer"),
+        "created_at": _column_type("datetime"),
+        "email_sent": _column_type("boolean", False),
+        "last_alert_at": _column_type("datetime"),
+        "alert_level": _column_type("string", "none"),
     }
 
     with engine.begin() as connection:
@@ -191,14 +218,14 @@ def upgrade_notification_table():
     }
 
     columns_to_add = {
-        "is_read": "BOOLEAN DEFAULT 0",
-        "user_id": "INTEGER",
-        "created_at": "DATETIME",
-        "severity": "VARCHAR DEFAULT 'low'",
-        "priority": "VARCHAR DEFAULT 'normal'",
-        "entity_type": "VARCHAR",
-        "entity_id": "INTEGER",
-        "metadata_json": "TEXT",
+        "is_read": _column_type("boolean", False),
+        "user_id": _column_type("integer"),
+        "created_at": _column_type("datetime"),
+        "severity": _column_type("string", "low"),
+        "priority": _column_type("string", "normal"),
+        "entity_type": _column_type("string"),
+        "entity_id": _column_type("integer"),
+        "metadata_json": _column_type("text"),
     }
 
     with engine.begin() as connection:
@@ -236,15 +263,15 @@ def upgrade_user_table():
     }
 
     columns_to_add = {
-        "is_verified": "BOOLEAN DEFAULT 0",
-        "otp_code": "VARCHAR",
-        "otp_expires_at": "DATETIME",
-        "otp_attempts": "INTEGER DEFAULT 0",
-        "otp_last_sent_at": "DATETIME",
-        "pending_invitation_token": "VARCHAR",
-        "two_factor_enabled": "BOOLEAN DEFAULT 0",
-        "two_factor_method": "VARCHAR",
-        "google_auth_secret": "VARCHAR",
+        "is_verified": _column_type("boolean", False),
+        "otp_code": _column_type("string"),
+        "otp_expires_at": _column_type("datetime"),
+        "otp_attempts": _column_type("integer", 0),
+        "otp_last_sent_at": _column_type("datetime"),
+        "pending_invitation_token": _column_type("string"),
+        "two_factor_enabled": _column_type("boolean", False),
+        "two_factor_method": _column_type("string"),
+        "google_auth_secret": _column_type("string"),
     }
 
     with engine.begin() as connection:
@@ -361,8 +388,8 @@ def upgrade_task_table():
         {
             "position": "INTEGER DEFAULT 0",
             "labels": "TEXT",
-            "scheduled_start": "DATETIME",
-            "scheduled_end": "DATETIME",
+            "scheduled_start": _column_type("datetime"),
+            "scheduled_end": _column_type("datetime"),
             "estimate_points": "INTEGER DEFAULT 1",
             "checklist": "TEXT",
         },
@@ -413,13 +440,13 @@ def upgrade_attachment_table():
     }
 
     columns_to_add = {
-        "mime_type": "VARCHAR",
-        "file_size": "INTEGER",
-        "uploader_id": "INTEGER",
-        "uploaded_at": "DATETIME",
-        "metadata_json": "TEXT",
-        "extracted_text": "TEXT",
-        "preview_available": "INTEGER DEFAULT 0",
+        "mime_type": _column_type("string"),
+        "file_size": _column_type("integer"),
+        "uploader_id": _column_type("integer"),
+        "uploaded_at": _column_type("datetime"),
+        "metadata_json": _column_type("text"),
+        "extracted_text": _column_type("text"),
+        "preview_available": _column_type("integer", 0),
     }
 
     with engine.begin() as connection:
@@ -530,8 +557,8 @@ def upgrade_ai_agent_tables():
             "summary": "TEXT",
             "data_json": "TEXT",
             "confidence": "FLOAT DEFAULT 0",
-            "created_at": "DATETIME",
-            "updated_at": "DATETIME",
+            "created_at": _column_type("datetime"),
+            "updated_at": _column_type("datetime"),
         },
         "ai_recommendations": {
             "agent_key": "VARCHAR",
@@ -550,8 +577,8 @@ def upgrade_ai_agent_tables():
             "task_id": "INTEGER",
             "user_id": "INTEGER",
             "created_by": "INTEGER",
-            "created_at": "DATETIME",
-            "updated_at": "DATETIME",
+            "created_at": _column_type("datetime"),
+            "updated_at": _column_type("datetime"),
         },
         "ai_execution_logs": {
             "recommendation_id": "INTEGER",
@@ -568,8 +595,8 @@ def upgrade_ai_agent_tables():
             "task_id": "INTEGER",
             "requested_by": "INTEGER",
             "executed_by": "INTEGER",
-            "created_at": "DATETIME",
-            "executed_at": "DATETIME",
+            "created_at": _column_type("datetime"),
+            "executed_at": _column_type("datetime"),
         },
         "ai_approval_history": {
             "recommendation_id": "INTEGER",
@@ -580,7 +607,7 @@ def upgrade_ai_agent_tables():
             "modified_payload_json": "TEXT",
             "confidence": "FLOAT DEFAULT 0",
             "execution_log_id": "INTEGER",
-            "created_at": "DATETIME",
+            "created_at": _column_type("datetime"),
         },
         "ai_context_snapshots": {
             "scope": "VARCHAR DEFAULT 'organization'",
@@ -588,7 +615,7 @@ def upgrade_ai_agent_tables():
             "user_id": "INTEGER",
             "context_hash": "VARCHAR",
             "payload_json": "TEXT",
-            "generated_at": "DATETIME",
+            "generated_at": _column_type("datetime"),
         },
         "ai_decision_history": {
             "agent_key": "VARCHAR",
@@ -598,7 +625,7 @@ def upgrade_ai_agent_tables():
             "confidence": "FLOAT DEFAULT 0",
             "project_id": "INTEGER",
             "user_id": "INTEGER",
-            "created_at": "DATETIME",
+            "created_at": _column_type("datetime"),
         },
         "ai_summaries": {
             "agent_key": "VARCHAR",
@@ -608,7 +635,7 @@ def upgrade_ai_agent_tables():
             "payload_json": "TEXT",
             "project_id": "INTEGER",
             "user_id": "INTEGER",
-            "created_at": "DATETIME",
+            "created_at": _column_type("datetime"),
         },
         "ai_operational_observations": {
             "agent_key": "VARCHAR",
@@ -621,15 +648,15 @@ def upgrade_ai_agent_tables():
             "project_id": "INTEGER",
             "task_id": "INTEGER",
             "user_id": "INTEGER",
-            "created_at": "DATETIME",
+            "created_at": _column_type("datetime"),
         },
         # NOTE: AI Copilot tables use UUID-as-string (CHAR(36)/VARCHAR) IDs on SQLite.
         # Avoid adding INTEGER columns that would break inserts.
         "ai_conversations": {
             "title": "VARCHAR",
             "user_id": "INTEGER",
-            "created_at": "DATETIME",
-            "updated_at": "DATETIME",
+            "created_at": _column_type("datetime"),
+            "updated_at": _column_type("datetime"),
         },
         "ai_messages": {
             "conversation_id": "VARCHAR",
@@ -637,7 +664,7 @@ def upgrade_ai_agent_tables():
             "content": "TEXT",
             "file_name": "VARCHAR",
             "file_type": "VARCHAR",
-            "created_at": "DATETIME",
+            "created_at": _column_type("datetime"),
         },
         "ai_documents": {
             "filename": "VARCHAR",
@@ -652,8 +679,8 @@ def upgrade_ai_agent_tables():
             "metadata_json": "TEXT",
             "project_id": "INTEGER",
             "user_id": "INTEGER",
-            "created_at": "DATETIME",
-            "updated_at": "DATETIME",
+            "created_at": _column_type("datetime"),
+            "updated_at": _column_type("datetime"),
         },
         "ai_document_chunks": {
             "document_id": "INTEGER",
@@ -664,7 +691,7 @@ def upgrade_ai_agent_tables():
             "metadata_json": "TEXT",
             "project_id": "INTEGER",
             "user_id": "INTEGER",
-            "created_at": "DATETIME",
+            "created_at": _column_type("datetime"),
         },
         "ai_retrieval_logs": {
             "conversation_id": "INTEGER",
@@ -672,7 +699,7 @@ def upgrade_ai_agent_tables():
             "retrieved_json": "TEXT",
             "project_id": "INTEGER",
             "user_id": "INTEGER",
-            "created_at": "DATETIME",
+            "created_at": _column_type("datetime"),
         },
     }
 
@@ -687,10 +714,10 @@ def upgrade_integration_tables():
     add_missing_columns(
         "oauth_accounts",
         {
-            "refresh_token_expires_at": "DATETIME",
-            "last_refreshed_at": "DATETIME",
+            "refresh_token_expires_at": _column_type("datetime"),
+            "last_refreshed_at": _column_type("datetime"),
             "refresh_error": "TEXT",
-            "revoked_at": "DATETIME",
+            "revoked_at": _column_type("datetime"),
         },
     )
     add_missing_columns(
@@ -725,9 +752,7 @@ app.middleware("http")(request_id_middleware)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        settings.FRONTEND_URL
-    ],
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -744,6 +769,15 @@ def root():
     return {
         "message":
             "WorkflowOS Backend Running"
+    }
+
+
+@app.get("/health")
+def health():
+    return {
+        "status": "ok",
+        "service": "workflowos-api",
+        "environment": settings.environment_name,
     }
 
 
@@ -896,6 +930,11 @@ app.include_router(
     demo_router,
     prefix="/api/v1",
     tags=["Demo"],
+)
+
+app.include_router(
+    summarizer_router,
+    prefix="/api/v1"
 )
 
 

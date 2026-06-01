@@ -42,6 +42,7 @@ import api from "../services/api";
 import { createRealtimeConnection } from "../services/realtime";
 import StatCard from "../components/ui/StatCard";
 import EmptyState from "../components/ui/EmptyState";
+import { PageSkeleton } from "../components/ui/SkeletonLoader";
 
 
 function Kpi({ label, value, icon: Icon, accentColor = "purple", sublabel }) {
@@ -151,7 +152,7 @@ export default function TeamAnalyticsPage() {
   if (loading) {
     return (
       <MainLayout>
-        <div className="h-[720px] animate-pulse rounded-lg bg-slate-200" />
+        <PageSkeleton tabs={true} />
       </MainLayout>
     );
   }

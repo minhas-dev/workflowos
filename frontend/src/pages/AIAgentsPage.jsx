@@ -19,6 +19,7 @@ import toast from "react-hot-toast";
 import MainLayout from "../layouts/MainLayout";
 import api from "../services/api";
 import { createRealtimeConnection } from "../services/realtime";
+import { StatCardSkeleton, CardGridSkeleton } from "../components/ui/SkeletonLoader";
 
 
 const agentIcons = {
@@ -157,15 +158,15 @@ export default function AIAgentsPage() {
   if (loading) {
     return (
       <MainLayout>
-        <div className="grid gap-4 md:grid-cols-3">
-          {[1, 2, 3].map((item) => (
-            <div key={item} className="h-28 animate-pulse rounded-lg bg-slate-200" />
-          ))}
-        </div>
-        <div className="mt-6 grid gap-4 md:grid-cols-2">
-          {[1, 2, 3, 4].map((item) => (
-            <div key={item} className="h-44 animate-pulse rounded-lg bg-slate-200" />
-          ))}
+        <div className="space-y-6">
+          <div className="grid gap-4 md:grid-cols-3">
+            <StatCardSkeleton />
+            <StatCardSkeleton />
+            <StatCardSkeleton />
+          </div>
+          <div className="mt-6">
+            <CardGridSkeleton count={4} height={180} />
+          </div>
         </div>
       </MainLayout>
     );

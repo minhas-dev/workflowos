@@ -31,6 +31,7 @@ import { createRealtimeConnection } from "../services/realtime";
 import UiStatCard from "../components/ui/StatCard";
 import EmptyState from "../components/ui/EmptyState";
 import ProjectFilesDrawer from "../components/ProjectFilesDrawer";
+import { StatCardSkeleton, CardGridSkeleton } from "../components/ui/SkeletonLoader";
 
 
 const initialFormData = {
@@ -1257,22 +1258,16 @@ export default function ProjectsPage() {
   if (loading) {
     return (
       <MainLayout>
-        <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-4">
-          {[1, 2, 3, 4].map((item) => (
-            <div
-              key={item}
-              className="h-28 animate-pulse rounded-lg bg-slate-200"
-            />
-          ))}
-        </div>
-
-        <div className="mt-8 grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
-          {[1, 2, 3, 4, 5, 6].map((item) => (
-            <div
-              key={item}
-              className="h-72 animate-pulse rounded-lg bg-slate-200"
-            />
-          ))}
+        <div className="space-y-8">
+          <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-4">
+            <StatCardSkeleton />
+            <StatCardSkeleton />
+            <StatCardSkeleton />
+            <StatCardSkeleton />
+          </div>
+          <div className="mt-8">
+            <CardGridSkeleton count={6} height={220} />
+          </div>
         </div>
       </MainLayout>
     );

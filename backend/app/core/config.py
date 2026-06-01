@@ -1,7 +1,7 @@
 # ```python
-from pathlib import Path
 import logging
 import os
+from pathlib import Path
 
 from dotenv import load_dotenv
 from pydantic import ValidationError
@@ -45,6 +45,8 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
 
     FRONTEND_URL: str = DEV_FRONTEND_URL
+    CORS_ORIGINS: str = ""
+    UPLOAD_DIR: str = "uploads"
 
     # ==========================
     # AI PROVIDER
@@ -54,7 +56,7 @@ class Settings(BaseSettings):
     # ==========================
     # AGENTROUTER / CLAUDE
     # ==========================
-    ANTHROPIC_API_KEY: str = "sk-w6gRfG7OLxBPkAFAHL2lYAklapdVsKYdPGrAX4VbPDkhtmAm"
+    ANTHROPIC_API_KEY: str | None = None
 
     # IMPORTANT: AgentRouter URL
     ANTHROPIC_BASE_URL: str = "https://agentrouter.org/"
@@ -125,6 +127,23 @@ class Settings(BaseSettings):
         return self.EMAIL_FROM or self.SMTP_EMAIL
 
     @property
+    def cors_origins(self) -> list[str]:
+        configured = [
+            origin.strip()
+            for origin in (self.CORS_ORIGINS or "").split(",")
+            if origin.strip()
+        ]
+        origins = configured or [self.FRONTEND_URL]
+        return list(dict.fromkeys(origins))
+
+    @property
+    def upload_root(self) -> Path:
+        upload_dir = Path(self.UPLOAD_DIR)
+        if upload_dir.is_absolute():
+            return upload_dir
+        return BACKEND_DIR / upload_dir
+
+    @property
     def environment_name(self) -> str:
         return (
             self.APP_ENV
@@ -192,7 +211,7 @@ class Settings(BaseSettings):
             bool(self.DATABASE_URL),
             self.FRONTEND_URL,
             self.AI_PROVIDER,
-            bool(self.ANTHROPIC_API_KEY.strip()),
+            bool(self.ANTHROPIC_API_KEY and self.ANTHROPIC_API_KEY.strip()),
             self.CLAUDE_MODEL,
             bool(
                 self.OPENAI_API_KEY

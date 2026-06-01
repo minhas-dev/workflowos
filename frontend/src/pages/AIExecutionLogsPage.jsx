@@ -13,6 +13,7 @@ import toast from "react-hot-toast";
 import MainLayout from "../layouts/MainLayout";
 import api from "../services/api";
 import { createRealtimeConnection } from "../services/realtime";
+import { TableSkeleton } from "../components/ui/SkeletonLoader";
 
 
 function formatDate(value) {
@@ -83,11 +84,7 @@ export default function AIExecutionLogsPage() {
       </div>
 
       {loading ? (
-        <div className="space-y-4">
-          {[1, 2, 3].map((item) => (
-            <div key={item} className="h-40 animate-pulse rounded-lg bg-slate-200" />
-          ))}
-        </div>
+        <TableSkeleton rows={5} cols={4} />
       ) : logs.length === 0 ? (
         <div className="rounded-lg border border-dashed border-slate-300 bg-white p-10 text-center text-slate-500">
           No AI execution logs are visible for your role.

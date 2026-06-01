@@ -55,7 +55,7 @@ SUPPORTED_EXTENSIONS = {
     "md",
     "markdown",
 }
-DOCUMENT_DIR = Path("uploads") / "ai_documents"
+DOCUMENT_DIR = settings.upload_root / "ai_documents"
 MIN_READABLE_TEXT_CHARS = 80
 MAX_BINARY_CHAR_RATIO = 0.02
 PDF_METADATA_JUNK_PATTERNS = [

@@ -9,6 +9,7 @@ import Topbar from "../components/Topbar";
 import ProjectLifecycleModal from "../components/ProjectLifecycleModal";
 import api from "../services/api";
 import { createRealtimeConnection } from "../services/realtime";
+import { Sparkles, Check, RotateCcw } from "lucide-react";
 
 
 export default function MainLayout({
@@ -16,6 +17,57 @@ export default function MainLayout({
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const location = useLocation();
+
+  // Showcase Mode states
+  const [demoStatus, setDemoStatus] = useState({ seeded: false, loading: true });
+
+  async function checkDemoStatus() {
+    try {
+      const res = await api.get("/demo/status");
+      setDemoStatus({ seeded: res.data.seeded, loading: false });
+    } catch (err) {
+      console.error("Failed to fetch demo status:", err);
+      setDemoStatus({ seeded: false, loading: false });
+    }
+  }
+
+  useEffect(() => {
+    checkDemoStatus();
+  }, []);
+
+  async function handleSeedDemo() {
+    try {
+      setDemoStatus((prev) => ({ ...prev, loading: true }));
+      await api.post("/demo/seed");
+      toast.success("Demo workspace seeded successfully!");
+      setDemoStatus({ seeded: true, loading: false });
+      window.dispatchEvent(new CustomEvent("project-created"));
+      window.dispatchEvent(new CustomEvent("task-created"));
+      window.dispatchEvent(new CustomEvent("dashboard-refresh"));
+      window.dispatchEvent(new CustomEvent("comment-added"));
+      window.dispatchEvent(new CustomEvent("task-updated"));
+    } catch (err) {
+      toast.error("Failed to seed demo workspace.");
+      setDemoStatus((prev) => ({ ...prev, loading: false }));
+    }
+  }
+
+  async function handleResetDemo() {
+    try {
+      setDemoStatus((prev) => ({ ...prev, loading: true }));
+      await api.post("/demo/reset");
+      toast.success("Workspace reset successfully!");
+      setDemoStatus({ seeded: false, loading: false });
+      window.dispatchEvent(new CustomEvent("project-deleted"));
+      window.dispatchEvent(new CustomEvent("task-deleted"));
+      window.dispatchEvent(new CustomEvent("dashboard-refresh"));
+      window.dispatchEvent(new CustomEvent("comment-added"));
+      window.dispatchEvent(new CustomEvent("task-updated"));
+    } catch (err) {
+      toast.error("Failed to reset workspace.");
+      setDemoStatus((prev) => ({ ...prev, loading: false }));
+    }
+  }
 
   // Project lifecycle states
   const [lifecycleModal, setLifecycleModal] = useState({
@@ -196,6 +248,48 @@ export default function MainLayout({
       <CommandPalette />
 
       <div className="flex min-h-dvh min-w-0 flex-1 flex-col bg-slate-50 transition-colors duration-200 dark:bg-slate-900">
+
+        {!demoStatus.loading && (
+          <div className={`w-full py-2.5 px-4 flex flex-wrap items-center justify-between text-xs font-semibold border-b transition-all duration-200 gap-3 ${
+            demoStatus.seeded
+              ? "bg-indigo-50 border-indigo-100 text-indigo-700 dark:bg-indigo-950/20 dark:border-indigo-900/30 dark:text-indigo-300"
+              : "bg-amber-50 border-amber-100 text-amber-700 dark:bg-amber-950/20 dark:border-amber-900/30 dark:text-amber-300"
+          }`}>
+            <div className="flex items-center gap-2 min-w-0">
+              {demoStatus.seeded ? (
+                <Check className="h-4 w-4 text-indigo-600 flex-shrink-0" />
+              ) : (
+                <Sparkles className="h-4 w-4 text-amber-500 animate-pulse flex-shrink-0" />
+              )}
+              <span className="truncate">
+                {demoStatus.seeded
+                  ? "Showcase Mode Active — Preloaded high-fidelity Ecommerce, Mobile App Redesign, and Marketing Sprint data."
+                  : "Showcase Mode Available — Seed the workspace with realistic, pre-populated projects, tasks, files, and discussion logs."}
+              </span>
+            </div>
+            <button
+              onClick={demoStatus.seeded ? handleResetDemo : handleSeedDemo}
+              disabled={demoStatus.loading}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-150 cursor-pointer shadow-sm ${
+                demoStatus.seeded
+                  ? "bg-white text-indigo-700 border border-indigo-200 hover:bg-indigo-50 dark:bg-slate-800 dark:text-indigo-300 dark:border-indigo-900/40 dark:hover:bg-slate-700"
+                  : "bg-amber-600 text-white hover:bg-amber-700 hover:shadow"
+              }`}
+            >
+              {demoStatus.seeded ? (
+                <>
+                  <RotateCcw className="h-3 w-3" />
+                  Reset Workspace
+                </>
+              ) : (
+                <>
+                  <Sparkles className="h-3 w-3" />
+                  Seed Workspace
+                </>
+              )}
+            </button>
+          </div>
+        )}
 
         <Topbar
           setIsOpen={setIsOpen}

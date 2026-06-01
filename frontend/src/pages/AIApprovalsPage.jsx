@@ -13,6 +13,7 @@ import toast from "react-hot-toast";
 import MainLayout from "../layouts/MainLayout";
 import api from "../services/api";
 import { createRealtimeConnection } from "../services/realtime";
+import { TableSkeleton } from "../components/ui/SkeletonLoader";
 
 
 function formatDate(value) {
@@ -171,11 +172,7 @@ export default function AIApprovalsPage() {
       )}
 
       {loading ? (
-        <div className="space-y-4">
-          {[1, 2, 3].map((item) => (
-            <div key={item} className="h-28 animate-pulse rounded-lg bg-slate-200" />
-          ))}
-        </div>
+        <TableSkeleton rows={4} cols={3} />
       ) : approvals.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800">

@@ -403,7 +403,7 @@ def send_invitation_email(
     invitation_token: str,
 ):
     invite_link = (
-        f"http://localhost:5173/accept-invitation/{invitation_token}"
+        f"{settings.FRONTEND_URL.rstrip('/')}/accept-invitation/{invitation_token}"
     )
 
     subject = f"You were invited to collaborate on {project_name}"
@@ -513,4 +513,3 @@ def send_invitation_email(
         html_body=html_body,
         text_body=text_body,
     )
-

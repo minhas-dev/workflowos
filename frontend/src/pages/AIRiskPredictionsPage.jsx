@@ -31,6 +31,7 @@ import {
 import MainLayout from "../layouts/MainLayout";
 import api from "../services/api";
 import { createRealtimeConnection } from "../services/realtime";
+import { PageSkeleton } from "../components/ui/SkeletonLoader";
 
 
 const riskColors = {
@@ -217,10 +218,7 @@ export default function AIRiskPredictionsPage() {
   if (loading) {
     return (
       <MainLayout>
-        <div className="space-y-4">
-          <div className="h-32 animate-pulse rounded-lg bg-slate-200 dark:bg-slate-800" />
-          <div className="h-[540px] animate-pulse rounded-lg bg-slate-200 dark:bg-slate-800" />
-        </div>
+        <PageSkeleton />
       </MainLayout>
     );
   }

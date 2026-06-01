@@ -2,10 +2,22 @@ import axios from "axios";
 import { logError } from "../utils/logger";
 import { safeRedirect, isSafeRedirectPath } from "../utils/navigation";
 
+function normalizeApiUrl(value) {
+  const raw = (value || "").trim();
+
+  if (!raw) {
+    return "/api/v1";
+  }
+
+  return raw.replace(/\/+$/, "");
+}
+
+export const API_BASE_URL = normalizeApiUrl(import.meta.env.VITE_API_URL);
+
 const api = axios.create({
 
   baseURL:
-    import.meta.env.VITE_API_URL,
+    API_BASE_URL,
 
 });
 

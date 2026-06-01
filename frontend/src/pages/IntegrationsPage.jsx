@@ -23,8 +23,9 @@ import {
 import toast from "react-hot-toast";
 
 import MainLayout from "../layouts/MainLayout";
-import api from "../services/api";
+import api, { API_BASE_URL } from "../services/api";
 import { createRealtimeConnection } from "../services/realtime";
+import { PageSkeleton } from "../components/ui/SkeletonLoader";
 
 
 const PROVIDER_ICONS = {
@@ -71,6 +72,9 @@ function providerSetupUrl(provider) {
   };
   return urls[provider];
 }
+
+
+const OAUTH_CALLBACK_BASE_URL = API_BASE_URL.replace(/\/+$/, "");
 
 
 export default function IntegrationsPage() {
@@ -297,7 +301,7 @@ export default function IntegrationsPage() {
   if (loading) {
     return (
       <MainLayout>
-        <div className="h-[720px] animate-pulse rounded-lg bg-slate-200" />
+        <PageSkeleton />
       </MainLayout>
     );
   }
@@ -467,7 +471,7 @@ export default function IntegrationsPage() {
                             Add {item.missing_config?.join(" and ")} to backend/.env, restart FastAPI, and set this callback URL in the provider app:
                           </p>
                           <code className="mt-2 block break-all rounded bg-white px-2 py-2 text-[11px] font-bold text-amber-900 ring-1 ring-amber-200">
-                            http://localhost:8000/api/v1/integrations/oauth/{item.provider}/callback
+                            {OAUTH_CALLBACK_BASE_URL}/integrations/oauth/{item.provider}/callback
                           </code>
                           {providerSetupUrl(item.provider) && (
                             <a

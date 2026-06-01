@@ -52,6 +52,7 @@ import AutomationsPage from "./pages/AutomationsPage";
 import IntegrationsPage from "./pages/IntegrationsPage";
 import TeamAnalyticsPage from "./pages/TeamAnalyticsPage";
 import ExecutiveReportsPage from "./pages/ExecutiveReportsPage";
+import MeetingSummarizerPage from "./pages/MeetingSummarizerPage";
 
 import NotificationsPage from "./pages/NotificationsPage";
 
@@ -299,6 +300,15 @@ export default function App() {
         element={
           <ProtectedRoute>
             <ExecutiveReportsPage />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/summarizer"
+        element={
+          <ProtectedRoute>
+            <MeetingSummarizerPage />
           </ProtectedRoute>
         }
       />

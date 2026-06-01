@@ -23,6 +23,7 @@ import MainLayout from "../layouts/MainLayout";
 import api from "../services/api";
 import { createRealtimeConnection } from "../services/realtime";
 import EmptyState from "../components/ui/EmptyState";
+import { ListItemSkeleton } from "../components/ui/SkeletonLoader";
 
 
 const typeIcons = {
@@ -202,13 +203,8 @@ export default function NotificationsPage() {
   if (loading) {
     return (
       <MainLayout>
-        <div className="space-y-4">
-          {[1, 2, 3, 4, 5].map((item) => (
-            <div
-              key={item}
-              className="h-24 animate-pulse rounded-lg bg-slate-200"
-            />
-          ))}
+        <div className="space-y-6 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-5 shadow-sm">
+          <ListItemSkeleton count={5} />
         </div>
       </MainLayout>
     );

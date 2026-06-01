@@ -33,6 +33,7 @@ import MainLayout from "../layouts/MainLayout";
 import api from "../services/api";
 import { createRealtimeConnection } from "../services/realtime";
 import EmptyState from "../components/ui/EmptyState";
+import { CalendarSkeleton } from "../components/ui/SkeletonLoader";
 
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -290,7 +291,7 @@ function TaskModal({ task, onClose, onSchedule }) {
         <div className="border-t border-slate-200 dark:border-slate-700 px-5 py-4">
           <button
             onClick={() => onSchedule(task.id, start, end, points)}
-            className="inline-flex items-center gap-2 rounded-md bg-slate-950 px-4 py-2 text-sm font-bold text-white hover:bg-slate-800"
+            className="button-primary w-full sm:w-auto"
           >
             <CalendarDays size={16} />
             Schedule
@@ -537,7 +538,7 @@ export default function PlanningPage() {
   if (loading) {
     return (
       <MainLayout>
-        <div className="h-[720px] skeleton-block" />
+        <CalendarSkeleton />
       </MainLayout>
     );
   }

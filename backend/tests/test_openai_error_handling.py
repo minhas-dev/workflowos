@@ -43,6 +43,7 @@ class FakeClient:
 
 
 def test_startup_validation_detects_missing_openai_key(monkeypatch):
+    monkeypatch.setattr(settings, "AI_PROVIDER", "openai")
     monkeypatch.setattr(settings, "OPENAI_API_KEY", None)
     service = OpenAIRAGService()
 

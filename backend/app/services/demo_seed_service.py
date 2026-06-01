@@ -17,10 +17,16 @@ from app.models.activity import Activity
 from app.models.analytics import AnalyticsSnapshot
 
 from app.models.automation import AutomationRule, AutomationExecution
-from app.models.ai_copilot import AIConversation
+from app.models.ai_copilot import AIConversation, AICopilotMessage
+from app.models.task_comment import TaskComment
+from app.models.attachment import Attachment
 
 from app.services.activity_service import create_activity
 from app.services.notification_service import create_notification
+
+import json
+import os
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -499,6 +505,77 @@ def seed_demo_for_user(db: Session, user: User) -> DemoSeedResult:
             _seed_sprints(db, user, project, by_status)
             _seed_analytics_snapshot(db, user, project)
 
+            # Seed realistic comments
+            task_in_progress = next((t for t in all_tasks if t.status == "in_progress"), None)
+            task_blocked = next((t for t in all_tasks if t.status == "blocked"), None)
+
+            if task_in_progress:
+                root_comment = TaskComment(
+                    task_id=task_in_progress.id,
+                    author_id=user.id,
+                    body=f"I have started implementation for the primary features of {project.name}. @Minhas please verify the design specifications in the attachments.",
+                    mentions="Minhas",
+                    created_at=datetime.utcnow() - timedelta(days=1),
+                )
+                db.add(root_comment)
+                db.flush()
+
+                reply_comment = TaskComment(
+                    task_id=task_in_progress.id,
+                    author_id=user.id,
+                    parent_id=root_comment.id,
+                    body="Design assets have been reviewed. Ready for engineering QA.",
+                    created_at=datetime.utcnow() - timedelta(hours=18),
+                )
+                db.add(reply_comment)
+                db.flush()
+
+            # Seed realistic files / attachments
+            upload_root = Path(__file__).resolve().parents[2] / "uploads"
+            projects_dir = upload_root / "projects"
+            filename = "design_specifications.pdf" if "Redesign" in project.name else "launch_manifest.pdf"
+            dest_dir = projects_dir / str(project.id)
+            dest_path = dest_dir / f"mock_{filename}"
+            dest_path.parent.mkdir(parents=True, exist_ok=True)
+            dest_path.write_bytes(b"%PDF-1.4 Mock PDF Content for Onboarding Demo")
+
+            metadata = {
+                "mime_type": "application/pdf",
+                "file_size": 42,
+                "filename": filename,
+                "ai": {
+                    "text_extracted": True,
+                    "ocr_ready": True,
+                    "document_type": "specifications",
+                },
+                "preview": {
+                    "available": True,
+                },
+                "semantic_search": {
+                    "enabled": True,
+                },
+            }
+
+            attachment = Attachment(
+                filename=f"mock_{filename}",
+                original_filename=filename,
+                mime_type="application/pdf",
+                file_size=42,
+                uploader_id=user.id,
+                project_id=project.id,
+                task_id=task_in_progress.id if task_in_progress else None,
+                metadata_json=json.dumps(metadata),
+                extracted_text=f"Mock OCR text for {project.name} launch spec and objectives.",
+                preview_available=1,
+                uploaded_at=datetime.utcnow() - timedelta(days=1),
+                storage_path=str(dest_path),
+                content_type="application/pdf",
+                size=42,
+                uploaded_by=user.id,
+            )
+            db.add(attachment)
+            db.flush()
+
             # Seed 2 general notifications per project.
             _seed_notification(
                 db,
@@ -523,6 +600,68 @@ def seed_demo_for_user(db: Session, user: User) -> DemoSeedResult:
                 entity_id=project.id,
             )
 
+        # Seed AI Copilot Conversation
+        conversation = AIConversation(
+            user_id=user.id,
+            title="Ecommerce & Launch Delivery Review",
+            created_at=datetime.utcnow() - timedelta(days=2),
+            updated_at=datetime.utcnow() - timedelta(days=2),
+        )
+        db.add(conversation)
+        db.flush()
+
+        msg1 = AICopilotMessage(
+            conversation_id=conversation.id,
+            role="user",
+            content="Check for any potential risks on the Ecommerce Launch project.",
+            created_at=datetime.utcnow() - timedelta(days=2),
+        )
+        msg2 = AICopilotMessage(
+            conversation_id=conversation.id,
+            role="assistant",
+            content=(
+                "### Risk Analysis: Ecommerce Launch\n\n"
+                "I have audited the active board and identified two critical items:\n\n"
+                "1. **Blocked Task**: 'Unblock dependency' is blocked by an external service provider, which holds up the frontend redesign release.\n"
+                "2. **Analytics Trend**: Delivery confidence has dropped to **77%** due to overdue milestones.\n\n"
+                "**Recommendation**: Complete the kickoff checklist and delegate the QA review tasks immediately."
+            ),
+            created_at=datetime.utcnow() - timedelta(days=2, seconds=-30),
+        )
+        db.add(msg1)
+        db.add(msg2)
+        db.flush()
+
+        # Seed Automation Rules & Executions
+        rule1 = AutomationRule(
+            name="Escalate Blocked Tasks",
+            description="Auto-notify manager when a task is moved to Blocked.",
+            trigger_type="task.moved",
+            conditions_json=json.dumps({"rules": [{"field": "task.status", "operator": "eq", "value": "blocked"}]}),
+            actions_json=json.dumps([{"type": "notify_manager", "severity": "high", "message": "Task moved to Blocked status."}]),
+            scope="personal",
+            owner_id=user.id,
+            enabled=True,
+            run_count=5,
+            failure_count=0,
+            created_at=datetime.utcnow() - timedelta(days=5),
+        )
+        db.add(rule1)
+        db.flush()
+
+        for i in range(5):
+            exec_log = AutomationExecution(
+                rule_id=rule1.id,
+                trigger_type="task.moved",
+                status="success",
+                input_json=json.dumps({"task_id": 100 + i, "status": "blocked"}),
+                output_json=json.dumps([{"notified": [user.id]}]),
+                started_at=datetime.utcnow() - timedelta(days=i, hours=2),
+                finished_at=datetime.utcnow() - timedelta(days=i, hours=2, minutes=-1),
+                created_at=datetime.utcnow() - timedelta(days=i, hours=2),
+            )
+            db.add(exec_log)
+
         # Finalize.
         _set_user_demo_seeded(db, user)
 
@@ -530,8 +669,6 @@ def seed_demo_for_user(db: Session, user: User) -> DemoSeedResult:
 
     except Exception as exc:
         logger.exception("Demo seed failed user_id=%s", user.id)
-        # Do not clear marker automatically; better to allow a manual retry later.
-        # But we can set marker back to null so retries work.
         try:
             setattr(user, "demo_seeded_at", None)
             db.add(user)
@@ -540,4 +677,55 @@ def seed_demo_for_user(db: Session, user: User) -> DemoSeedResult:
             pass
 
         raise exc
+
+
+def reset_demo_for_user(db: Session, user: User) -> bool:
+    """Reset the demo workspace by deleting all seeded data for the user."""
+    upload_root = Path(__file__).resolve().parents[2] / "uploads"
+    projects_dir = upload_root / "projects"
+
+    # 1. Delete all projects owned by the user.
+    projects = db.query(Project).filter(Project.owner_id == user.id).all()
+    for p in projects:
+        dest_dir = projects_dir / str(p.id)
+        if dest_dir.exists():
+            try:
+                for file_path in dest_dir.iterdir():
+                    file_path.unlink()
+                dest_dir.rmdir()
+            except Exception:
+                pass
+        db.delete(p)
+
+    # 2. Delete any orphaned tasks assigned to the user
+    tasks = db.query(Task).filter(Task.assigned_to == user.id, Task.project_id == None).all()
+    for t in tasks:
+        db.delete(t)
+
+    # 3. Delete AI conversations & messages
+    conversations = db.query(AIConversation).filter(AIConversation.user_id == user.id).all()
+    for c in conversations:
+        db.delete(c)
+
+    # 4. Delete automation rules & executions
+    rules = db.query(AutomationRule).filter(AutomationRule.owner_id == user.id).all()
+    for r in rules:
+        db.delete(r)
+
+    # 5. Clear notifications & activities
+    notifications = db.query(Notification).filter(Notification.user_id == user.id).all()
+    for n in notifications:
+        db.delete(n)
+
+    activities = db.query(Activity).filter(Activity.user_id == user.id).all()
+    for a in activities:
+        db.delete(a)
+
+    # 6. Clear seed and onboarding markers
+    setattr(user, "demo_seeded_at", None)
+    setattr(user, "onboarding_completed_at", None)
+    db.add(user)
+
+    db.commit()
+    return True
 

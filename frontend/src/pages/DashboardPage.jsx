@@ -29,7 +29,7 @@ import { Link } from "react-router-dom";
 import MainLayout from "../layouts/MainLayout";
 import api from "../services/api";
 import { createRealtimeConnection } from "../services/realtime";
-import { SkeletonList } from "../components/ui/SkeletonLoader";
+import { SkeletonList, ChartSkeleton } from "../components/ui/SkeletonLoader";
 
 function EmptyChart({ message }) {
   return (
@@ -361,7 +361,7 @@ export default function DashboardPage() {
           </div>
 
           {loading ? (
-            <div className="h-[240px] animate-pulse rounded-lg bg-slate-50 dark:bg-slate-900 dark:bg-slate-700" />
+            <ChartSkeleton height={240} />
           ) : projectChartData.length === 0 ? (
             <EmptyChart message="Create projects to see progress trends" />
           ) : (
@@ -464,7 +464,7 @@ export default function DashboardPage() {
             </p>
 
             {loading ? (
-              <div className="h-[200px] animate-pulse rounded-lg bg-slate-50 dark:bg-slate-900 dark:bg-slate-700" />
+              <ChartSkeleton height={200} />
             ) : donutData.length === 0 ? (
               <EmptyChart message="No tasks yet" />
             ) : (

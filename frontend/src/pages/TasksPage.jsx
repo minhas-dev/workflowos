@@ -14,6 +14,7 @@ import KanbanColumn from "../components/KanbanColumn";
 import TaskWorkspace from "../components/TaskWorkspace";
 import DeleteConfirmationModal from "../components/DeleteConfirmationModal";
 import StatCard from "../components/ui/StatCard";
+import { KanbanBoardSkeleton } from "../components/ui/SkeletonLoader";
 
 const columns = [
   { id: "todo", title: "Todo", tone: "bg-slate-50 dark:bg-slate-900" },
@@ -292,11 +293,7 @@ export default function TasksPage() {
   if (loading) {
     return (
       <MainLayout>
-        <div className="grid w-full gap-4 sm:grid-cols-2 xl:grid-cols-5">
-          {[1, 2, 3, 4, 5].map((item) => (
-            <div key={item} className="h-[360px] skeleton-block xl:h-[620px]" />
-          ))}
-        </div>
+        <KanbanBoardSkeleton />
       </MainLayout>
     );
   }

@@ -25,6 +25,7 @@ import toast from "react-hot-toast";
 import MainLayout from "../layouts/MainLayout";
 import api from "../services/api";
 import { createRealtimeConnection } from "../services/realtime";
+import { PageSkeleton } from "../components/ui/SkeletonLoader";
 
 
 const ACTION_TYPES = [
@@ -316,7 +317,7 @@ export default function AutomationsPage() {
   if (loading) {
     return (
       <MainLayout>
-        <div className="h-[720px] animate-pulse rounded-lg bg-slate-200" />
+        <PageSkeleton />
       </MainLayout>
     );
   }
