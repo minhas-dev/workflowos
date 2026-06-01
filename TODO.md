@@ -1,30 +1,30 @@
-# TODO.md
+# TODO: LOGIN 403 FIX — AUTH REGRESSION DEBUG
 
-## Phase 9 — Collaboration Premium
+## Plan
+1. Root-cause investigation
+   - Identify exact `403` trigger(s) in backend login route.
+   - Confirm whether `user.is_verified` is the only gate.
+2. Logging instrumentation (temporary, safe)
+   - Add debug logs to `/api/v1/auth/login` for: user found, password valid, `is_verified` value, and which 403 branch triggers.
+   - Add debug logs to `/api/v1/auth/verify-email` for: email lookup, OTP verify result, and final `is_verified` after commit.
+   - Ensure logs never include password/OTP/token values.
+3. Reproduce and capture evidence
+   - Run signup → verify-email → login.
+   - Run login for a previously verified user.
+4. Minimal safe fix
+   - If `verify-email` succeeds but `is_verified` doesn’t persist: patch the verification update/DB session usage.
+   - If OTP verification fails unexpectedly: patch OTP verification integration (still secure; no bypass).
+5. Verification
+   - Confirm login works.
+   - Confirm wrong password still returns 401.
+   - Confirm unverified user still gets 403 with correct message.
+   - Smoke-test: signup, OTP, forgot/reset password, JWT auth, RBAC, onboarding, settings, delete account, AI Copilot.
 
-### Milestone 1: Threaded comments
-- [ ] Frontend: update `TaskDiscussionPanel.jsx` to render replies recursively
-- [ ] Frontend: add Reply UI (POST comment with `parent_id`)
-- [ ] Frontend: keep existing root comment create/delete/attachments behavior unchanged
+## Progress
+- [x] Identify exact 403 trigger in `auth.py` (blocks on `not user.is_verified`).
+- [x] Add temporary debug logging around login + verify-email.
+- [ ] Run reproduction and capture logs.
+- [ ] Implement minimal safe fix.
+- [ ] Verify full auth/onboarding surface.
 
-### Milestone 2: Mentions + notifications
-- [ ] Backend: in `comment_service.py`, create notification(s) for mentioned users
-- [ ] Frontend: add `@username` autocomplete UX in `TaskDiscussionPanel.jsx`
-- [ ] Backend: add mention-suggestion endpoint if missing
-
-### Milestone 3: Presence indicators (soft realtime)
-- [ ] Backend: support websocket presence state updates (viewing/editing) best-effort
-- [ ] Frontend: emit presence state on panel open + textarea focus
-- [ ] Frontend: display presence strip (online/viewing/editing/last active)
-
-### Milestone 4: Activity feed realtime (MVP)
-- [ ] Frontend: update `ActivityFeed.jsx` to subscribe to realtime `activity.created`
-- [ ] Ensure realtime updates respect `projectId`
-
-### Verification (no regressions)
-- [ ] comments work (threads + replies)
-- [ ] mentions work (autocomplete + notification delivery)
-- [ ] activity feed works (realtime)
-- [ ] notifications integrated (realtime toast + dropdown refresh)
-- [ ] run lint/tests and ensure no broken routes or websocket regressions
 

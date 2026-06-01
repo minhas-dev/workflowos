@@ -337,15 +337,22 @@ def verify_email(
     user = get_user_by_email(db, data.email)
 
     if not user:
+        print(f"[VERIFY_EMAIL] user_not_found email={data.email.lower()}")
         raise HTTPException(status_code=404, detail="User not found")
 
     if user.is_verified:
+        print(f"[VERIFY_EMAIL] already_verified email={data.email.lower()}")
         return {
             "success": True,
             "message": "Email already verified",
         }
 
     ok, message = verify_otp(user, data.otp)
+    print(
+        "[VERIFY_EMAIL] otp_check "
+        f"email={data.email.lower()} ok={ok} message={message}"
+    )
+
     db.commit()
 
     if not ok:
@@ -354,6 +361,11 @@ def verify_email(
     user.is_verified = True
     apply_pending_invitation(db, user)
     db.commit()
+
+    print(
+        "[VERIFY_EMAIL] marked_verified "
+        f"email={data.email.lower()} is_verified={user.is_verified}"
+    )
 
     token = create_user_token(user)
 
@@ -365,24 +377,45 @@ def verify_email(
     }
 
 
+
 @router.post("/login")
 def login_user(
     data: LoginSchema,
     db: Session = Depends(get_db),
 ):
+    # Temporary debug logging for auth regression (no secrets/password/OTP values).
+    # Keep this until the 403 root cause is confirmed, then remove/disable.
     user = get_user_by_email(db, data.email)
 
-    if not user or not verify_password(data.password, user.password):
+    if not user:
+        print(f"[LOGIN] user_not_found email={data.email.lower()}")
+        raise HTTPException(
+            status_code=401,
+            detail="Incorrect email or password. Please try again.",
+        )
+
+    password_ok = verify_password(data.password, user.password)
+    print(
+        "[LOGIN] password_check "
+        f"email={data.email.lower()} ok={password_ok} is_verified={getattr(user, 'is_verified', None)}"
+    )
+
+    if not password_ok:
         raise HTTPException(
             status_code=401,
             detail="Incorrect email or password. Please try again.",
         )
 
     if not user.is_verified:
+        print(
+            "[LOGIN] blocked email="
+            f"{data.email.lower()} reason=is_verified_false"
+        )
         raise HTTPException(
             status_code=403,
             detail="Verify your email before signing in",
         )
+
 
     if user.two_factor_enabled:
         if user.two_factor_method == "email":
@@ -583,9 +616,11 @@ def forgot_password(
 
     if not user:
         return {
-            "success": True,
-            "message": "If the email exists, an OTP has been sent",
+            "success": False,
+            "code": "EMAIL_NOT_FOUND",
+            "message": "No account found with this email.",
         }
+
 
     enforce_resend_window(user)
     otp = assign_otp(user)
@@ -607,9 +642,10 @@ def verify_password_reset_otp(
     user = get_user_by_email(db, data.email)
 
     if not user:
-        raise HTTPException(status_code=400, detail="Invalid OTP")
+        raise HTTPException(status_code=404, detail="EMAIL_NOT_FOUND")
 
     ok, message = verify_otp(user, data.otp)
+
     db.commit()
 
     if not ok:

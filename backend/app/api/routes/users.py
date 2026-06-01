@@ -21,6 +21,34 @@ from app.schemas.user import (
     PasswordUpdateRequest,
     UserProfileUpdate,
 )
+from app.models.task import Task
+from app.models.sprint import Sprint
+from app.models.milestone import Milestone
+from app.models.activity import Activity
+from app.models.analytics import AnalyticsSnapshot, ProductivityMetric, WorkloadMetric
+from app.models.ai_agent import (
+    AIAgentMemory,
+    AIRecommendation,
+    AIExecutionLog,
+    AIApprovalHistory,
+    AIContextSnapshot,
+    AIDecisionHistory,
+    AISummary,
+    AIOperationalObservation,
+    AIConversation,
+    AIDocument,
+    AIDocumentChunk,
+    AIRetrievalLog,
+)
+from app.models.integration import (
+    Integration,
+    OAuthAccount,
+    OAuthState,
+    WebhookEndpoint,
+    APIToken,
+)
+from app.models.project_invitation import ProjectInvitation
+from app.models.automation import AutomationRule
 
 
 router = APIRouter()
@@ -206,3 +234,98 @@ def update_password(
     return {
         "message": "Password updated successfully",
     }
+
+
+@router.delete("/me", status_code=200)
+def delete_current_user_account(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        user_id = current_user.id
+
+        # 1. Nullify tasks assigned to this user
+        db.query(Task).filter(Task.assigned_to == user_id).update({Task.assigned_to: None}, synchronize_session=False)
+
+        # 2. Nullify sprints created by this user
+        db.query(Sprint).filter(Sprint.created_by == user_id).update({Sprint.created_by: None}, synchronize_session=False)
+
+        # 3. Nullify milestones created by this user
+        db.query(Milestone).filter(Milestone.created_by == user_id).update({Milestone.created_by: None}, synchronize_session=False)
+
+        # 4. Nullify activities created by this user to keep audit trails intact but anonymized
+        db.query(Activity).filter(Activity.user_id == user_id).update({Activity.user_id: None}, synchronize_session=False)
+
+        # 5. Delete AI recommendation approvals by this user
+        db.query(AIApprovalHistory).filter(AIApprovalHistory.reviewer_id == user_id).delete(synchronize_session=False)
+
+        # 6. Delete AI execution logs requested/executed by this user
+        db.query(AIExecutionLog).filter(
+            (AIExecutionLog.requested_by == user_id) | (AIExecutionLog.executed_by == user_id)
+        ).delete(synchronize_session=False)
+
+        # 7. Delete AI recommendations created by or assigned to this user
+        db.query(AIRecommendation).filter(
+            (AIRecommendation.user_id == user_id) | (AIRecommendation.created_by == user_id)
+        ).delete(synchronize_session=False)
+
+        # 8. Delete AI agent memories matching this user
+        db.query(AIAgentMemory).filter(AIAgentMemory.user_id == user_id).delete(synchronize_session=False)
+
+        # 9. Delete AI snapshots matching this user
+        db.query(AIContextSnapshot).filter(AIContextSnapshot.user_id == user_id).delete(synchronize_session=False)
+
+        # 10. Delete AI decision histories matching this user
+        db.query(AIDecisionHistory).filter(AIDecisionHistory.user_id == user_id).delete(synchronize_session=False)
+
+        # 11. Delete AI summaries matching this user
+        db.query(AISummary).filter(AISummary.user_id == user_id).delete(synchronize_session=False)
+
+        # 12. Delete AI operational observations matching this user
+        db.query(AIOperationalObservation).filter(AIOperationalObservation.user_id == user_id).delete(synchronize_session=False)
+
+        # 13. Delete AI conversations matching this user (messages cascade delete)
+        db.query(AIConversation).filter(AIConversation.user_id == user_id).delete(synchronize_session=False)
+
+        # 14. Delete AI document chunks matching this user
+        db.query(AIDocumentChunk).filter(AIDocumentChunk.user_id == user_id).delete(synchronize_session=False)
+
+        # 15. Delete AI documents matching this user (chunks cascade delete)
+        db.query(AIDocument).filter(AIDocument.user_id == user_id).delete(synchronize_session=False)
+
+        # 16. Delete AI retrieval logs matching this user
+        db.query(AIRetrievalLog).filter(AIRetrievalLog.user_id == user_id).delete(synchronize_session=False)
+
+        # 17. Delete integrations oauth tokens & oauth states
+        db.query(OAuthAccount).filter(OAuthAccount.user_id == user_id).delete(synchronize_session=False)
+        db.query(OAuthState).filter(OAuthState.user_id == user_id).delete(synchronize_session=False)
+        db.query(APIToken).filter(APIToken.owner_id == user_id).delete(synchronize_session=False)
+        db.query(WebhookEndpoint).filter(WebhookEndpoint.created_by == user_id).delete(synchronize_session=False)
+        db.query(Integration).filter(Integration.created_by == user_id).delete(synchronize_session=False)
+
+        # 18. Delete automations owned by this user
+        db.query(AutomationRule).filter(AutomationRule.owner_id == user_id).delete(synchronize_session=False)
+
+        # 19. Delete invitations created by this user
+        db.query(ProjectInvitation).filter(ProjectInvitation.invited_by == user_id).delete(synchronize_session=False)
+
+        # 20. Delete analytics logs/snapshots matching this user
+        db.query(AnalyticsSnapshot).filter(AnalyticsSnapshot.user_id == user_id).delete(synchronize_session=False)
+        db.query(ProductivityMetric).filter(ProductivityMetric.user_id == user_id).delete(synchronize_session=False)
+        db.query(WorkloadMetric).filter(WorkloadMetric.user_id == user_id).delete(synchronize_session=False)
+
+        # 21. Delete the user (owned projects, project memberships, comments, notifications, attachments cascade delete-orphan automatically)
+        db.delete(current_user)
+        db.commit()
+
+        return {
+            "status": "success",
+            "message": "Your account and all associated personal data have been deleted successfully."
+        }
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"An error occurred while deleting your account: {str(e)}"
+        )

@@ -41,7 +41,7 @@ export default function VerifyOtpPage() {
 
       setLoading(true);
 
-      await api.post(
+      const res = await api.post(
         "/auth/verify-otp",
         {
           email,
@@ -61,6 +61,16 @@ export default function VerifyOtpPage() {
       );
 
     } catch (error) {
+
+      // If the email isn't registered, we must not push the user into reset flow.
+      const status = error?.response?.status;
+      const detail = error?.response?.data?.detail;
+
+      if (status === 404 && detail === "EMAIL_NOT_FOUND") {
+        toast.error("Account not found for this email.");
+        return;
+      }
+
 
       console.error(error);
 

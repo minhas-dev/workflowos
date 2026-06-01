@@ -4,6 +4,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useNavigate } from "react-router-dom";
 
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -62,6 +63,7 @@ const sections = [
   { id: "preferences", label: "Workspace", icon: Palette },
   { id: "integrations", label: "Integrations", icon: Grid3X3 },
   { id: "billing", label: "Billing", icon: CreditCard },
+  { id: "danger", label: "Danger zone", icon: ShieldOff },
 ];
 
 const SHOW_ACCOUNT_INTEGRATIONS = false;
@@ -235,9 +237,11 @@ function StatusBadge({ tone = "slate", children, icon: Icon }) {
 }
 
 export default function SettingsPage() {
+  const navigate = useNavigate();
   const {
     user,
     updateUser,
+    logout,
   } = useAuthStore();
   const { isDark, toggleDark } = useThemeStore();
 
@@ -246,6 +250,11 @@ export default function SettingsPage() {
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [avatarPreview, setAvatarPreview] = useState(null);
   const [profileSaving, setProfileSaving] = useState(false);
+
+  // Danger Zone Deletion states
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [accountDeleting, setAccountDeleting] = useState(false);
   const [profileSuccess, setProfileSuccess] = useState(false);
   const [profileError, setProfileError] = useState(null);
   const [fullName, setFullName] = useState(
@@ -620,6 +629,35 @@ export default function SettingsPage() {
       );
     } finally {
       setLoadingAction("");
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (deleteConfirmText !== "DELETE") {
+      toast.error("Please type DELETE to confirm account deletion.");
+      return;
+    }
+
+    try {
+      setAccountDeleting(true);
+      const response = await api.delete("/users/me");
+      toast.success(response.data?.message || "Your account has been deleted successfully.");
+      
+      // Clear authentication state and caches
+      logout();
+      setShowDeleteModal(false);
+      setDeleteConfirmText("");
+      
+      // Navigate to landing/login
+      navigate("/");
+    } catch (error) {
+      console.error("[Account Deletion Error]", error);
+      toast.error(
+        error?.response?.data?.detail ||
+        "Failed to delete account. Please try again or contact support."
+      );
+    } finally {
+      setAccountDeleting(false);
     }
   };
 
@@ -1283,9 +1321,138 @@ export default function SettingsPage() {
                 </div>
               </div>
             </SectionShell>
+
+            <SectionShell
+              id="danger"
+              eyebrow="Danger zone"
+              title="Critical actions"
+              description="Permanently delete your account and remove all personal information."
+              icon={ShieldOff}
+            >
+              <div className="rounded-xl border border-rose-200 bg-rose-50/30 p-5 dark:border-rose-900/40 dark:bg-rose-950/10">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <h3 className="font-extrabold text-rose-950 dark:text-rose-200">Delete Account</h3>
+                    <p className="mt-1 text-sm text-rose-700 dark:text-rose-300">
+                      Permanently delete your WorkflowOS account and associated personal data. This action cannot be undone.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowDeleteModal(true)}
+                    className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-rose-200 bg-white px-4 py-2.5 text-sm font-extrabold text-rose-600 shadow-sm hover:bg-rose-50 hover:text-rose-700 dark:border-rose-900 dark:bg-slate-900 dark:text-rose-400 dark:hover:bg-rose-950/20"
+                  >
+                    Delete Account
+                  </button>
+                </div>
+              </div>
+            </SectionShell>
           </div>
         </div>
       </div>
+
+      <AnimatePresence>
+        {showDeleteModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => {
+                if (!accountDeleting) {
+                  setShowDeleteModal(false);
+                  setDeleteConfirmText("");
+                }
+              }}
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            />
+
+            {/* Modal Body */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              transition={{ duration: 0.2, ease: "easeOut" }}
+              className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900"
+            >
+              {/* Decorative top red gradient edge */}
+              <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-red-600 via-rose-500 to-amber-500" />
+
+              <div className="mt-2 flex items-start gap-4">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-rose-100 text-rose-600 dark:bg-rose-950/50 dark:text-rose-400">
+                  <AlertCircle className="h-6 w-6" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h2 className="text-xl font-extrabold text-slate-950 dark:text-white">
+                    Delete Account?
+                  </h2>
+                  <p className="mt-2 text-sm text-slate-500 dark:text-slate-400 leading-normal font-medium">
+                    This action is <span className="font-extrabold text-rose-600 dark:text-rose-400">permanent</span> and <span className="font-extrabold text-rose-600 dark:text-rose-400">cannot be undone</span>. Once deleted, all of your personal details and configuration preferences will be wiped.
+                  </p>
+                  
+                  {/* Warning bullet points */}
+                  <div className="mt-4 rounded-lg bg-rose-50/50 p-4 border border-rose-100 dark:bg-rose-950/10 dark:border-rose-950/30">
+                    <h4 className="text-xs font-extrabold text-rose-900 uppercase dark:text-rose-400">What will be removed:</h4>
+                    <ul className="mt-2 space-y-1.5 text-xs font-semibold text-rose-800 dark:text-rose-300">
+                      <li className="flex items-center gap-1.5">• Your personal profile & custom credentials</li>
+                      <li className="flex items-center gap-1.5">• Custom settings & theme preferences</li>
+                      <li className="flex items-center gap-1.5">• Workspace access, tokens, & API keys</li>
+                      <li className="flex items-center gap-1.5">• All personal project boards exclusively owned by you</li>
+                    </ul>
+                  </div>
+
+                  {/* Safety typing confirmation */}
+                  <div className="mt-5">
+                    <label htmlFor="confirm-delete-input" className="block text-xs font-extrabold uppercase text-slate-500 dark:text-slate-400 mb-1.5">
+                      To confirm, type <span className="text-rose-600 font-black">DELETE</span> in the input below:
+                    </label>
+                    <input
+                      id="confirm-delete-input"
+                      type="text"
+                      value={deleteConfirmText}
+                      disabled={accountDeleting}
+                      onChange={(e) => setDeleteConfirmText(e.target.value)}
+                      placeholder="DELETE"
+                      className="control-input w-full border-slate-200 bg-slate-50 font-bold focus:border-rose-500 focus:ring-rose-500/20 dark:border-slate-800 dark:bg-slate-950"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Actions Footer */}
+              <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-end border-t border-slate-100 pt-4 dark:border-slate-800">
+                <button
+                  type="button"
+                  disabled={accountDeleting}
+                  onClick={() => {
+                    setShowDeleteModal(false);
+                    setDeleteConfirmText("");
+                  }}
+                  className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={accountDeleting || deleteConfirmText !== "DELETE"}
+                  onClick={handleDeleteAccount}
+                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-rose-600 px-5 py-2.5 text-sm font-extrabold text-white shadow-sm hover:bg-rose-700 dark:bg-rose-700 dark:hover:bg-rose-800 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {accountDeleting ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin animate-spin-fast" />
+                      Deleting account...
+                    </>
+                  ) : (
+                    "Delete account permanently"
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </MainLayout>
   );
 }

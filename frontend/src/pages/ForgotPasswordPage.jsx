@@ -41,12 +41,17 @@ export default function ForgotPasswordPage() {
 
       setEmailNotFound(false);
 
-      await api.post(
+      const res = await api.post(
         "/auth/forgot-password",
         {
           email,
         }
       );
+
+      if (res?.data?.success === false && res?.data?.code === "EMAIL_NOT_FOUND") {
+        setEmailNotFound(true);
+        return;
+      }
 
       toast.success(
         "OTP sent to your email"
@@ -60,6 +65,7 @@ export default function ForgotPasswordPage() {
       );
 
     } catch (error) {
+
 
       console.error(error);
 
