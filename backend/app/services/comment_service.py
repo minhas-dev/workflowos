@@ -31,20 +31,24 @@ def resolve_mentioned_users(db: Session, task: Task, handles: list[str]) -> list
     users = db.query(User).all()
     handle_set = set(h.lower() for h in handles if h)
     for u in users:
-        # user.username may not exist; use common fields defensively.
         possible = []
         for attr in ["username", "handle", "slug", "email"]:
             if hasattr(u, attr):
                 val = getattr(u, attr)
                 if isinstance(val, str) and val:
                     possible.append(val.lower())
-        if hasattr(u, "full_name") and isinstance(u.full_name, str):
-            possible.append(u.full_name.lower())
+        if hasattr(u, "full_name") and isinstance(u.full_name, str) and u.full_name:
+            clean_name = u.full_name.lower().strip()
+            possible.append(clean_name)
+            possible.append(clean_name.replace(" ", ""))
+            possible.append(clean_name.replace(" ", "_"))
+            possible.append(clean_name.replace(" ", "-"))
+        if hasattr(u, "email") and isinstance(u.email, str) and u.email:
+            possible.append(u.email.split("@")[0].lower())
 
         if any(p in handle_set for p in possible):
             mentioned_ids.add(u.id)
 
-    # Never notify author.
     return list(mentioned_ids)
 
 

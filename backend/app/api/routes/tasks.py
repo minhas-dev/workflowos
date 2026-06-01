@@ -10,7 +10,10 @@ from fastapi import (
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.database import get_db
-from app.core.deps import get_optional_current_user
+from app.core.deps import get_optional_current_user, get_current_user
+from fastapi import UploadFile, File
+from app.models.attachment import Attachment
+from app.services.attachment_service import save_upload, delete_attachment, ensure_can_download_attachment
 
 from app.models.task import Task
 from app.models.project import Project
@@ -19,7 +22,12 @@ from app.services.activity_service import create_activity
 from app.services.notification_service import create_notification
 from app.services.realtime_service import schedule_global_event, schedule_project_event
 from app.services.automation_service import schedule_trigger
-from app.services.task_service import create_task as service_create_task, update_task as service_update_task
+from app.services.task_service import (
+    create_task as service_create_task,
+    update_task as service_update_task,
+    serialize_task as service_serialize_task,
+)
+from app.services.project_lifecycle_service import evaluate_project_lifecycle
 
 from datetime import datetime
 
@@ -54,43 +62,7 @@ def update_project_progress(
     project_id: int | None,
     db: Session
 ):
-
-    if project_id is None:
-        return
-
-
-    project = (
-        db.query(Project)
-        .filter(Project.id == project_id)
-        .first()
-    )
-
-    if not project:
-        return
-
-    tasks = (
-        db.query(Task)
-        .filter(Task.project_id == project_id)
-        .all()
-    )
-
-    if not tasks:
-        project.progress = 0
-        return project
-
-    completed_count = len([
-        task for task in tasks
-        if task.status == "completed"
-    ])
-
-    project.progress = round(
-        (completed_count / len(tasks)) * 100
-    )
-
-    if project.progress < 100 and project.status == "completed":
-        project.status = "active"
-
-    return project
+    return evaluate_project_lifecycle(project_id, db)
 
 
 def actor_label(user: User | None):
@@ -118,27 +90,7 @@ BOARD_STATUSES = [
 
 
 def serialize_task(task: Task):
-    return {
-        "id": task.id,
-        "title": task.title,
-        "description": task.description,
-        "priority": task.priority,
-        "status": task.status,
-        "created_at": task.created_at,
-        "due_date": task.due_date,
-        "project_id": task.project_id,
-        "assigned_to": task.assigned_to,
-        "position": task.position or 0,
-        "labels": [
-            label.strip()
-            for label in (task.labels or "").split(",")
-            if label.strip()
-        ],
-        "assignee": task.assignee,
-        "project": task.project,
-        "comment_count": len(task.comments or []),
-        "attachment_count": len(task.attachments or []),
-    }
+    return service_serialize_task(task)
 
 
 # =========================
@@ -412,3 +364,123 @@ def delete_task(
         "success": True,
         "message": "Task deleted successfully"
     }
+
+
+@router.get("/{task_id}/files")
+def list_task_files(
+    task_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    task = db.query(Task).filter(Task.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    dummy = Attachment(task_id=task_id, project_id=task.project_id, uploader_id=task.assigned_to or 0)
+    ensure_can_download_attachment(db, dummy, current_user)
+
+    attachments = (
+        db.query(Attachment)
+        .filter(Attachment.task_id == task_id)
+        .order_by(Attachment.uploaded_at.desc())
+        .all()
+    )
+    return attachments
+
+
+@router.post("/{task_id}/files")
+def upload_task_file(
+    task_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    task = db.query(Task).filter(Task.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    attachment = save_upload(
+        db=db,
+        file=file,
+        user=current_user,
+        task_id=task_id,
+    )
+
+    schedule_project_event(
+        attachment.project_id,
+        "attachment.created",
+        {"attachment_id": attachment.id, "task_id": attachment.task_id},
+    )
+    schedule_global_event(
+        "analytics.updated",
+        {"source": "attachment.created", "attachment_id": attachment.id, "project_id": attachment.project_id},
+    )
+
+    create_activity(
+        db=db,
+        action_type="attachment_uploaded",
+        message=f"{current_user.full_name} uploaded {attachment.original_filename} to task {task.title}.",
+        user_id=current_user.id,
+        project_id=attachment.project_id,
+        task_id=attachment.task_id,
+        entity_type="attachment",
+        entity_id=attachment.id,
+    )
+
+    schedule_trigger(
+        "attachment.uploaded",
+        {
+            "attachment_id": attachment.id,
+            "task_id": attachment.task_id,
+            "project_id": attachment.project_id,
+            "actor_id": current_user.id,
+            "entity_type": "attachment",
+            "entity_id": attachment.id,
+            "message": attachment.original_filename,
+        },
+    )
+
+    return attachment
+
+
+@router.delete("/{task_id}/files/{file_id}")
+def delete_task_file(
+    task_id: int,
+    file_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    attachment = (
+        db.query(Attachment)
+        .filter(Attachment.id == file_id)
+        .filter(Attachment.task_id == task_id)
+        .first()
+    )
+    if not attachment:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    schedule_project_event(
+        attachment.project_id,
+        "attachment.deleted",
+        {"attachment_id": attachment.id, "task_id": attachment.task_id},
+    )
+
+    result = delete_attachment(db, attachment, user=current_user)
+    return result
+
+
+@router.post("/{task_id}/ai-summary")
+def get_task_ai_summary(
+    task_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from app.services.ai_task_service import generate_ai_task_summary
+
+    task = db.query(Task).filter(Task.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    summary = generate_ai_task_summary(db, task_id)
+    return {"summary": summary}
+

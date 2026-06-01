@@ -11,7 +11,7 @@ import api from "../services/api";
 import { logError } from "../utils/logger";
 import { createRealtimeConnection } from "../services/realtime";
 import KanbanColumn from "../components/KanbanColumn";
-import TaskDiscussionPanel from "../components/TaskDiscussionPanel";
+import TaskWorkspace from "../components/TaskWorkspace";
 import DeleteConfirmationModal from "../components/DeleteConfirmationModal";
 import StatCard from "../components/ui/StatCard";
 
@@ -499,11 +499,13 @@ export default function TasksPage() {
           </div>
         </DndContext>
 
-        <TaskDiscussionPanel
+        <TaskWorkspace
           task={selectedTask}
           open={Boolean(selectedTask)}
           onClose={() => setSelectedTask(null)}
           onChanged={fetchData}
+          projects={projects}
+          users={users}
         />
 
         <DeleteConfirmationModal

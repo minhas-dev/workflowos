@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 from typing import Any, Optional
 
@@ -13,6 +14,7 @@ from app.services.realtime_service import (
     schedule_project_event,
 )
 from app.services.automation_service import schedule_trigger
+from app.services.project_lifecycle_service import evaluate_project_lifecycle
 
 BOARD_STATUSES = [
     "todo",
@@ -35,7 +37,98 @@ def actor_label(user: Optional[User] = None) -> str:
     return user.full_name if user else "A teammate"
 
 
+def compute_task_intelligence(task: Task) -> dict[str, Any]:
+    score = 100
+    badge = "healthy"
+    warnings = []
+    suggestions = []
+
+    if task.status == "completed":
+        return {
+            "score": 100,
+            "badge": "healthy",
+            "warnings": [],
+            "suggestions": ["Task is completed successfully!"]
+        }
+
+    if task.status == "blocked":
+        score -= 30
+        badge = "at_risk"
+        warnings.append("This task is currently marked as blocked.")
+        suggestions.append("Address the blocker or reassign dependencies.")
+
+    is_overdue = False
+    if task.due_date and task.due_date < datetime.utcnow():
+        is_overdue = True
+        score -= 40
+        badge = "overdue"
+        warnings.append(f"Task is overdue by {int((datetime.utcnow() - task.due_date).days)} days.")
+        suggestions.append("Reschedule the due date or prioritize immediately.")
+
+    if task.priority == "high":
+        score -= 10
+        if badge == "healthy":
+            badge = "high_priority"
+        warnings.append("High priority task requires attention.")
+        suggestions.append("Allocate dedicated focus to resolve high-priority items.")
+    elif task.priority == "critical":
+        score -= 20
+        if badge == "healthy":
+            badge = "high_priority"
+        warnings.append("Critical priority task requires immediate resolution.")
+        suggestions.append("Escalate blockers and complete as soon as possible.")
+
+    checklist_items = []
+    if task.checklist:
+        try:
+            checklist_items = json.loads(task.checklist)
+        except Exception:
+            pass
+
+    if checklist_items:
+        total = len(checklist_items)
+        completed = sum(1 for item in checklist_items if item.get("completed"))
+        if total > 0:
+            completed_ratio = completed / total
+            if completed_ratio < 1.0:
+                deduction = int((1.0 - completed_ratio) * 20)
+                score -= deduction
+                warnings.append(f"{total - completed} of {total} checklist items are incomplete.")
+                suggestions.append("Complete the remaining subtasks in the checklist.")
+            if completed_ratio == 0:
+                suggestions.append("Start working on the first checklist item.")
+
+    if task.due_date and not is_overdue:
+        time_left = task.due_date - datetime.utcnow()
+        if time_left.total_seconds() < 86400:
+            score -= 10
+            warnings.append("Task deadline is in less than 24 hours.")
+            suggestions.append("Review task scope to meet the impending deadline.")
+
+    if task.priority in ["high", "critical"] and not (task.comments):
+        score -= 10
+        warnings.append("No discussion or updates recorded on this high-priority task.")
+        suggestions.append("Leave a comment or update to log progress.")
+
+    score = max(0, min(100, score))
+
+    if score < 50 and badge == "healthy":
+        badge = "at_risk"
+
+    return {
+        "score": score,
+        "badge": badge,
+        "warnings": warnings,
+        "suggestions": list(set(suggestions))
+    }
+
+
 def serialize_task(task: Task) -> dict[str, Any]:
+    try:
+        checklist_items = json.loads(task.checklist) if task.checklist else []
+    except Exception:
+        checklist_items = []
+
     return {
         "id": task.id,
         "title": task.title,
@@ -56,29 +149,13 @@ def serialize_task(task: Task) -> dict[str, Any]:
         "project": task.project,
         "comment_count": len(task.comments or []),
         "attachment_count": len(task.attachments or []),
+        "checklist": checklist_items,
+        "intelligence": compute_task_intelligence(task),
     }
 
 
 def update_project_progress(project_id: int | None, db: Session) -> Optional[Project]:
-    if project_id is None:
-        return None
-
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        return None
-
-    tasks = db.query(Task).filter(Task.project_id == project_id).all()
-    if not tasks:
-        project.progress = 0
-        return project
-
-    completed_count = len([task for task in tasks if task.status == "completed"])
-    project.progress = round((completed_count / len(tasks)) * 100)
-
-    if project.progress < 100 and project.status == "completed":
-        project.status = "active"
-
-    return project
+    return evaluate_project_lifecycle(project_id, db)
 
 
 def _normalize_labels(labels: Any) -> str:
@@ -219,9 +296,55 @@ def update_task(
     if isinstance(payload.get("labels"), list):
         payload["labels"] = ",".join([label.strip() for label in payload.get("labels") if label.strip()])
 
+    old_checklist = []
+    if task.checklist:
+        try:
+            old_checklist = json.loads(task.checklist)
+        except Exception:
+            pass
+
+    if "checklist" in payload:
+        new_val = payload["checklist"]
+        new_checklist = []
+        if isinstance(new_val, (list, dict)):
+            new_checklist = new_val
+        elif isinstance(new_val, str) and new_val:
+            try:
+                new_checklist = json.loads(new_val)
+            except Exception:
+                pass
+
+        old_completed_ids = {item.get("id") for item in old_checklist if item.get("completed")}
+        for item in new_checklist:
+            item_id = item.get("id")
+            is_completed = item.get("completed")
+            item_name = item.get("name") or "Subtask"
+            if is_completed and item_id not in old_completed_ids:
+                create_activity(
+                    db=db,
+                    action_type="checklist_completed",
+                    message=f"{actor_label(current_user)} checked off '{item_name}' on task {task.title}.",
+                    user_id=current_user.id if current_user else None,
+                    project_id=task.project_id,
+                    task_id=task.id,
+                )
+
+        payload["checklist"] = json.dumps(new_checklist)
+
     for key, value in payload.items():
-        if hasattr(task, key) and value is not None:
-            setattr(task, key, value)
+        if hasattr(task, key):
+            if key in ["project_id", "assigned_to"]:
+                if value in ["", "null", None]:
+                    setattr(task, key, None)
+                else:
+                    setattr(task, key, int(value))
+            elif key == "due_date":
+                if value in ["", "null", None]:
+                    setattr(task, key, None)
+                else:
+                    setattr(task, key, value)
+            elif value is not None:
+                setattr(task, key, value)
 
     db.commit()
     db.refresh(task)
@@ -256,23 +379,7 @@ def update_task(
                 type="success",
             )
 
-            if project and project.progress == 100 and project.status != "completed":
-                project.status = "completed"
-                create_activity(
-                    db=db,
-                    action_type="project_completed",
-                    message=f"Project {project.name} was completed because all tasks are done.",
-                    user_id=current_user.id if current_user else None,
-                    project_id=project.id,
-                    task_id=task.id,
-                )
-                create_notification(
-                    db=db,
-                    user_id=project.owner_id,
-                    title="Project completed",
-                    message=f"{project.name} has reached 100% completion.",
-                    type="success",
-                )
+
 
     if "assigned_to" in payload and payload.get("assigned_to") != old_assigned_to:
         create_activity(

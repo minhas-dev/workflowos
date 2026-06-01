@@ -1,6 +1,7 @@
 import {
   useEffect,
   useState,
+  useRef,
 } from "react";
 
 import {
@@ -27,10 +28,11 @@ import {
   useLocation,
   useNavigate,
 } from "react-router-dom";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 
 import api from "../services/api";
 import { featureFlags } from "../config/featureFlags";
+import { createRealtimeConnection } from "../services/realtime";
 
 
 export default function Sidebar({
@@ -42,9 +44,8 @@ export default function Sidebar({
 
   const navigate = useNavigate();
 
-  const [activityPreview, setActivityPreview] =
-    useState([]);
-
+  const [latestActivity, setLatestActivity] = useState(null);
+  const activityTimerRef = useRef(null);
 
   const role =
     localStorage.getItem(
@@ -56,52 +57,94 @@ export default function Sidebar({
       "user_name"
     );
 
+  const showActivity = (activity) => {
+    if (!activity || !activity.message) return;
+
+    if (activityTimerRef.current) {
+      clearTimeout(activityTimerRef.current);
+    }
+
+    setLatestActivity(activity);
+
+    activityTimerRef.current = setTimeout(() => {
+      setLatestActivity(null);
+    }, 30000); // 30 seconds
+  };
 
   async function fetchActivityPreview() {
-
     try {
-
       const response = await api.get(
         "/activity/",
         {
           params: {
-            limit: 3,
+            limit: 1,
           },
         }
       );
-
-      setActivityPreview(
-        Array.isArray(response.data?.data)
-          ? response.data.data
-          : []
-      );
-
+      const data = response.data?.data;
+      if (Array.isArray(data) && data.length > 0) {
+        const latest = data[0];
+        const createdAt = new Date(latest.created_at || latest.timestamp);
+        const diffMs = new Date() - createdAt;
+        // Only show on page load if it's within the last 5 minutes
+        if (diffMs < 300000) {
+          showActivity(latest);
+        }
+      }
     } catch (error) {
-
       console.error(error);
-
-      setActivityPreview([]);
-
     }
-
   }
 
-
   useEffect(() => {
+    fetchActivityPreview();
 
-    const timer = window.setTimeout(fetchActivityPreview, 0);
+    const stopRealtime = createRealtimeConnection({
+      onMessage: (message) => {
+        if (
+          message.event === "activity.created" ||
+          message.event.startsWith("task.") ||
+          message.event.startsWith("project.") ||
+          message.event.startsWith("comment.")
+        ) {
+          fetchActivityPreview();
+        }
+      },
+    });
 
-    return () => window.clearTimeout(timer);
+    const localEvents = [
+      "project-created",
+      "project-updated",
+      "project-deleted",
+      "task-created",
+      "task-updated",
+      "task-moved",
+      "task-deleted",
+      "comment-added",
+    ];
 
+    const handleLocalEvent = () => {
+      fetchActivityPreview();
+    };
+
+    localEvents.forEach((evt) => {
+      window.addEventListener(evt, handleLocalEvent);
+    });
+
+    return () => {
+      stopRealtime();
+      localEvents.forEach((evt) => {
+        window.removeEventListener(evt, handleLocalEvent);
+      });
+      if (activityTimerRef.current) {
+        clearTimeout(activityTimerRef.current);
+      }
+    };
   }, []);
 
-
   const logout = () => {
-
     localStorage.clear();
-
     navigate("/login");
-
   };
 
 
@@ -458,45 +501,31 @@ export default function Sidebar({
 
 
       {/* ACTIVITY SUMMARY */}
-
-      <div className="mx-3 mb-3 mt-auto rounded-xl border border-white/[0.06] bg-white/[0.04] p-3">
-
-        <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-white/40">
-
-          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
-
-          <span>
-            Live activity
-          </span>
-
-        </div>
-
-        <div className="space-y-3">
-
-          {activityPreview.length === 0 ? (
-
-            <p className="border-b border-white/[0.04] py-1 text-xs leading-relaxed text-white/50 last:border-0">
-              No recent collaboration updates.
-            </p>
-
-          ) : (
-
-            activityPreview.map((activity) => (
-
-              <div
-                key={activity.id}
-              className="border-b border-white/[0.04] py-1 text-xs leading-relaxed text-white/50 last:border-0"
-              >
-                {activity.message}
+      <AnimatePresence>
+        {latestActivity && (
+          <motion.div
+            initial={{ opacity: 0, y: 15, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -10, scale: 0.95 }}
+            transition={{ duration: 0.25, ease: "easeOut" }}
+            className="mx-3 mb-3 mt-auto rounded-xl border border-white/[0.08] bg-[#161622]/50 p-3 shadow-md backdrop-blur-sm"
+          >
+            <div className="mb-1.5 flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-white/40">
+              <div className="flex items-center gap-1.5">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+                <span>Live activity</span>
               </div>
+              <span className="text-[9px] font-medium lowercase tracking-normal text-brand-400">
+                just now
+              </span>
+            </div>
 
-            ))
-
-          )}
-
-        </div>
-
-      </div>
+            <p className="line-clamp-2 text-xs leading-relaxed text-white/80" title={latestActivity.message}>
+              {latestActivity.message}
+            </p>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
 
       {/* LOGOUT */}

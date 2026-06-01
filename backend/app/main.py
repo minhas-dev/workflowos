@@ -355,8 +355,6 @@ def upgrade_activity_table():
                 """
             )
         )
-
-
 def upgrade_task_table():
     add_missing_columns(
         "tasks",
@@ -366,6 +364,7 @@ def upgrade_task_table():
             "scheduled_start": "DATETIME",
             "scheduled_end": "DATETIME",
             "estimate_points": "INTEGER DEFAULT 1",
+            "checklist": "TEXT",
         },
     )
 
@@ -401,7 +400,6 @@ add_missing_columns(
         "role": "VARCHAR DEFAULT 'Viewer'",
     },
 )
-
 
 def upgrade_attachment_table():
     inspector = inspect(engine)

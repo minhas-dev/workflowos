@@ -114,6 +114,7 @@ def scoped_activity_query(
 def get_activities(
     limit: int = 30,
     project_id: int | None = None,
+    task_id: int | None = None,
     db: Session = Depends(get_db),
     role: str | None = Header(None),
     current_user: User | None = Depends(get_optional_current_user),
@@ -127,6 +128,11 @@ def get_activities(
     if project_id:
         query = query.filter(
             Activity.project_id == project_id
+        )
+
+    if task_id:
+        query = query.filter(
+            Activity.task_id == task_id
         )
 
     activities = (

@@ -11,7 +11,10 @@ from fastapi import (
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.database import get_db
-from app.core.deps import get_optional_current_user
+from app.core.deps import get_optional_current_user, get_current_user
+from fastapi import UploadFile, File
+from app.models.attachment import Attachment
+from app.services.attachment_service import save_upload, delete_attachment, ensure_can_download_attachment
 from app.models.project import Project
 from app.models.task import Task
 from app.models.user import User
@@ -20,6 +23,7 @@ from app.services.activity_service import create_activity
 from app.services.notification_service import create_notification
 from app.services.realtime_service import schedule_global_event, schedule_project_event
 from app.core.rbac import RBAC
+from app.services.project_lifecycle_service import evaluate_project_lifecycle
 
 router = APIRouter()
 
@@ -270,6 +274,8 @@ def create_project(
     db.commit()
     db.refresh(new_project)
 
+    evaluate_project_lifecycle(new_project.id, db, current_user.id if current_user else None)
+
     create_activity(
         db=db,
         action_type="project_created",
@@ -395,6 +401,8 @@ def update_project(
 
     db.commit()
     db.refresh(project)
+
+    evaluate_project_lifecycle(project.id, db, current_user.id if current_user else None)
 
     create_activity(
         db=db,
@@ -535,3 +543,105 @@ def delete_project(
     return {
         "message": "Project deleted successfully",
     }
+
+
+@router.get("/{project_id}/files")
+def list_project_files(
+    project_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    dummy = Attachment(project_id=project_id, uploader_id=project.owner_id or 0)
+    ensure_can_download_attachment(db, dummy, current_user)
+
+    attachments = (
+        db.query(Attachment)
+        .filter(Attachment.project_id == project_id)
+        .order_by(Attachment.uploaded_at.desc())
+        .all()
+    )
+    return attachments
+
+
+@router.post("/{project_id}/files")
+def upload_project_file(
+    project_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    attachment = save_upload(
+        db=db,
+        file=file,
+        user=current_user,
+        project_id=project_id,
+    )
+
+    schedule_project_event(
+        attachment.project_id,
+        "attachment.created",
+        {"attachment_id": attachment.id, "project_id": attachment.project_id},
+    )
+    schedule_global_event(
+        "analytics.updated",
+        {"source": "attachment.created", "attachment_id": attachment.id, "project_id": attachment.project_id},
+    )
+
+    create_activity(
+        db=db,
+        action_type="attachment_uploaded",
+        message=f"{current_user.full_name} uploaded {attachment.original_filename} to project {project.name}.",
+        user_id=current_user.id,
+        project_id=attachment.project_id,
+        entity_type="attachment",
+        entity_id=attachment.id,
+    )
+
+    from app.services.automation_service import schedule_trigger
+    schedule_trigger(
+        "attachment.uploaded",
+        {
+            "attachment_id": attachment.id,
+            "project_id": attachment.project_id,
+            "actor_id": current_user.id,
+            "entity_type": "attachment",
+            "entity_id": attachment.id,
+            "message": attachment.original_filename,
+        },
+    )
+
+    return attachment
+
+
+@router.delete("/{project_id}/files/{file_id}")
+def delete_project_file(
+    project_id: int,
+    file_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    attachment = (
+        db.query(Attachment)
+        .filter(Attachment.id == file_id)
+        .filter(Attachment.project_id == project_id)
+        .first()
+    )
+    if not attachment:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    schedule_project_event(
+        attachment.project_id,
+        "attachment.deleted",
+        {"attachment_id": attachment.id, "project_id": attachment.project_id},
+    )
+
+    result = delete_attachment(db, attachment, user=current_user)
+    return result

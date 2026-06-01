@@ -75,7 +75,7 @@ export default function TaskCard({
     <article
       ref={setNodeRef}
       style={style}
-      onDoubleClick={() => onOpen?.(task)}
+      onClick={() => onOpen?.(task)}
       className="group rounded-xl border border-[var(--line)] bg-[var(--surface)] p-3 shadow-sm transition duration-200 hover:-translate-y-1 hover:border-[var(--line-strong)] hover:shadow-premium-sm"
     >
 
@@ -86,11 +86,9 @@ export default function TaskCard({
 
         <button
           type="button"
-
           {...listeners}
-
           {...attributes}
-
+          onClick={(event) => event.stopPropagation()}
           className="
             cursor-grab
             rounded-lg

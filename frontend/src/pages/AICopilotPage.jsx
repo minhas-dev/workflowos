@@ -35,6 +35,7 @@ import MainLayout from "../layouts/MainLayout";
 import useAICopilotStore from "../store/aiCopilotStore";
 import useAuthStore from "../store/authStore";
 import { logError } from "../utils/logger";
+import MarkdownRenderer from "../components/MarkdownRenderer";
 
 
 const SAVED_PROMPTS = [
@@ -97,91 +98,7 @@ const SUPPORTED_FILES = {
 };
 
 function renderAssistantContent(content) {
-  const lines = (content || "").split("\n");
-  const elements = [];
-  let listItems = [];
-  let orderedItems = [];
-
-  const flushLists = () => {
-    if (listItems.length) {
-      elements.push(
-        <ul key={`ul-${elements.length}`} className="my-2 list-disc space-y-1 pl-5">
-          {listItems.map((item, index) => (
-            <li key={index}>{item}</li>
-          ))}
-        </ul>
-      );
-      listItems = [];
-    }
-
-    if (orderedItems.length) {
-      elements.push(
-        <ol key={`ol-${elements.length}`} className="my-2 list-decimal space-y-1 pl-5">
-          {orderedItems.map((item, index) => (
-            <li key={index}>{item}</li>
-          ))}
-        </ol>
-      );
-      orderedItems = [];
-    }
-  };
-
-  lines.forEach((line, index) => {
-    const trimmed = line.trim();
-
-    if (!trimmed) {
-      flushLists();
-      elements.push(<div key={`space-${index}`} className="h-2" />);
-      return;
-    }
-
-    if (trimmed.startsWith("### ")) {
-      flushLists();
-      elements.push(
-        <h4 key={index} className="mt-3 text-sm font-extrabold text-slate-800 dark:text-slate-100">
-          {trimmed.replace(/^###\s+/, "")}
-        </h4>
-      );
-      return;
-    }
-
-    if (trimmed.startsWith("## ")) {
-      flushLists();
-      elements.push(
-        <h3 key={index} className="mt-3 text-base font-extrabold text-slate-900 dark:text-white">
-          {trimmed.replace(/^##\s+/, "")}
-        </h3>
-      );
-      return;
-    }
-
-    if (/^[-*•]\s+/.test(trimmed)) {
-      if (orderedItems.length) {
-        flushLists();
-      }
-      listItems.push(trimmed.replace(/^[-*•]\s+/, ""));
-      return;
-    }
-
-    if (/^\d+\.\s+/.test(trimmed)) {
-      if (listItems.length) {
-        flushLists();
-      }
-      orderedItems.push(trimmed.replace(/^\d+\.\s+/, ""));
-      return;
-    }
-
-    flushLists();
-    elements.push(
-      <p key={index} className="my-1">
-        {trimmed}
-      </p>
-    );
-  });
-
-  flushLists();
-
-  return elements;
+  return <MarkdownRenderer content={content} />;
 }
 
 

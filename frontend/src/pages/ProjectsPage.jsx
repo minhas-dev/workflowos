@@ -19,6 +19,7 @@ import {
   UserRound,
   MailCheck,
   X,
+  Paperclip,
 } from "lucide-react";
 
 import toast from "react-hot-toast";
@@ -26,8 +27,10 @@ import toast from "react-hot-toast";
 import MainLayout from "../layouts/MainLayout";
 import api from "../services/api";
 import ActivityFeed from "../components/ActivityFeed";
+import { createRealtimeConnection } from "../services/realtime";
 import UiStatCard from "../components/ui/StatCard";
 import EmptyState from "../components/ui/EmptyState";
+import ProjectFilesDrawer from "../components/ProjectFilesDrawer";
 
 
 const initialFormData = {
@@ -381,6 +384,7 @@ function ProjectCard({
   canManageProjects,
   onEdit,
   onDelete,
+  onFiles,
 }) {
   const countdown = getDeadlineCountdown(project);
   const isCritical =
@@ -433,27 +437,38 @@ function ProjectCard({
           </p>
         </div>
 
-        {canManageProjects && (
-          <div className="flex shrink-0 items-center gap-1 opacity-100 transition md:opacity-0 md:group-hover:opacity-100">
-            <button
-              type="button"
-              onClick={() => onEdit(project)}
-              className="rounded-lg p-2 text-slate-500 dark:text-slate-400 transition hover:bg-slate-100 hover:text-slate-950"
-              title="Edit project"
-            >
-              <Edit3 size={17} />
-            </button>
+        <div className="flex shrink-0 items-center gap-1 opacity-100 transition md:opacity-0 md:group-hover:opacity-100">
+          <button
+            type="button"
+            onClick={() => onFiles(project)}
+            className="rounded-lg p-2 text-slate-500 dark:text-slate-400 transition hover:bg-slate-100 hover:text-slate-950"
+            title="Project files"
+          >
+            <Paperclip size={17} />
+          </button>
 
-            <button
-              type="button"
-              onClick={() => onDelete(project.id)}
-              className="rounded-lg p-2 text-slate-500 dark:text-slate-400 transition hover:bg-rose-50 hover:text-rose-600"
-              title="Delete project"
-            >
-              <Trash2 size={17} />
-            </button>
-          </div>
-        )}
+          {canManageProjects && (
+            <>
+              <button
+                type="button"
+                onClick={() => onEdit(project)}
+                className="rounded-lg p-2 text-slate-500 dark:text-slate-400 transition hover:bg-slate-100 hover:text-slate-950"
+                title="Edit project"
+              >
+                <Edit3 size={17} />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => onDelete(project.id)}
+                className="rounded-lg p-2 text-slate-500 dark:text-slate-400 transition hover:bg-rose-50 hover:text-rose-600"
+                title="Delete project"
+              >
+                <Trash2 size={17} />
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       <div className="mt-5">
@@ -513,6 +528,7 @@ function ProjectSection({
   canManageProjects,
   onEdit,
   onDelete,
+  onFiles,
 }) {
   if (!projects.length) return null;
 
@@ -540,6 +556,7 @@ function ProjectSection({
             canManageProjects={canManageProjects}
             onEdit={onEdit}
             onDelete={onDelete}
+            onFiles={onFiles}
           />
         ))}
       </div>
@@ -867,6 +884,7 @@ export default function ProjectsPage() {
   const [sortBy, setSortBy] = useState("created_desc");
   const [formData, setFormData] = useState(initialFormData);
   const [touchedFields, setTouchedFields] = useState({});
+  const [filesProject, setFilesProject] = useState(null);
 
   const userRole = localStorage.getItem("user_role");
   const canManageProjects =
@@ -902,6 +920,41 @@ export default function ProjectsPage() {
 
   useEffect(() => {
     fetchData();
+  }, []);
+
+  useEffect(() => {
+    const handler = () => fetchData();
+    const events = [
+      "project-created",
+      "project-updated",
+      "project-deleted",
+      "task-created",
+      "task-updated",
+      "task-moved",
+      "task-deleted",
+    ];
+    events.forEach((ev) => window.addEventListener(ev, handler));
+    return () => events.forEach((ev) => window.removeEventListener(ev, handler));
+  }, []);
+
+  useEffect(() => {
+    return createRealtimeConnection({
+      onMessage: (message) => {
+        if (
+          [
+            "project.created",
+            "project.updated",
+            "project.deleted",
+            "task.created",
+            "task.updated",
+            "task.moved",
+            "task.deleted",
+          ].includes(message.event)
+        ) {
+          fetchData();
+        }
+      },
+    });
   }, []);
 
   useEffect(() => {
@@ -1365,6 +1418,7 @@ export default function ProjectsPage() {
                 canManageProjects={canManageProjects}
                 onEdit={openEditModal}
                 onDelete={deleteProject}
+                onFiles={setFilesProject}
               />
 
               <ProjectSection
@@ -1375,6 +1429,7 @@ export default function ProjectsPage() {
                 canManageProjects={canManageProjects}
                 onEdit={openEditModal}
                 onDelete={deleteProject}
+                onFiles={setFilesProject}
               />
 
               <ProjectSection
@@ -1385,6 +1440,7 @@ export default function ProjectsPage() {
                 canManageProjects={canManageProjects}
                 onEdit={openEditModal}
                 onDelete={deleteProject}
+                onFiles={setFilesProject}
               />
             </div>
           )}
@@ -1411,6 +1467,12 @@ export default function ProjectsPage() {
         isFormValid={isFormValid}
         completionPercent={completionPercent}
         onSubmit={handleSubmit}
+      />
+
+      <ProjectFilesDrawer
+        project={filesProject}
+        open={Boolean(filesProject)}
+        onClose={() => setFilesProject(null)}
       />
     </MainLayout>
   );

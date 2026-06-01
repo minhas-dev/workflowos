@@ -16,6 +16,7 @@ import toast from "react-hot-toast";
 import api from "../services/api";
 import AttachmentCard from "./AttachmentCard";
 import AttachmentPreviewModal from "./AttachmentPreviewModal";
+import DeleteConfirmationModal from "./DeleteConfirmationModal";
 
 
 
@@ -50,6 +51,7 @@ export default function TaskDiscussionPanel({
 
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewAttachment, setPreviewAttachment] = useState(null);
+  const [deletingAttachment, setDeletingAttachment] = useState(null);
 
 
   const role = localStorage.getItem("user_role");
@@ -119,6 +121,23 @@ export default function TaskDiscussionPanel({
       onChanged?.();
     } catch (error) {
       toast.error(error?.response?.data?.detail || "Failed to delete comment");
+    }
+  }
+
+  async function handleDeleteConfirm() {
+    if (!deletingAttachment) return;
+    try {
+      await api.delete(`/attachments/${deletingAttachment.id}`);
+      await fetchThread();
+      onChanged?.();
+      toast.success("Attachment deleted");
+    } catch (e) {
+      toast.error(
+        e?.response?.data?.detail ||
+          "Failed to delete attachment"
+      );
+    } finally {
+      setDeletingAttachment(null);
     }
   }
 
@@ -282,19 +301,7 @@ export default function TaskDiscussionPanel({
                         "noopener,noreferrer"
                       );
                     }}
-                    onDelete={async () => {
-                      try {
-                        await api.delete(`/attachments/${attachment.id}`);
-                        await fetchThread();
-                        onChanged?.();
-                        toast.success("Attachment deleted");
-                      } catch (e) {
-                        toast.error(
-                          e?.response?.data?.detail ||
-                            "Failed to delete attachment"
-                        );
-                      }
-                    }}
+                    onDelete={() => setDeletingAttachment(attachment)}
                   />
                 ))
               )}
@@ -379,6 +386,16 @@ export default function TaskDiscussionPanel({
           </div>
         </form>
       </aside>
+
+      <DeleteConfirmationModal
+        isOpen={Boolean(deletingAttachment)}
+        title="Delete attachment?"
+        description="This action cannot be undone and will permanently remove this attachment from the task."
+        itemName={deletingAttachment?.original_filename || ""}
+        onConfirm={handleDeleteConfirm}
+        onCancel={() => setDeletingAttachment(null)}
+        isDangerous={false}
+      />
     </div>
   );
 }

@@ -144,3 +144,77 @@ def analyze_task_intelligence(db: Session):
             "confidence": clamp(55 + len(recent_completions) * 4),
         },
     }
+
+
+def generate_fallback_summary(task: Task, comments: list) -> str:
+    parts = []
+    parts.append(f"Task '{task.title}' is '{task.status}' with '{task.priority}' priority.")
+    if task.due_date:
+        days_left = (task.due_date - datetime.utcnow()).days
+        if days_left < 0:
+            parts.append(f"It is overdue by {abs(days_left)} days.")
+        else:
+            parts.append(f"It is due in {days_left} days.")
+
+    if comments:
+        latest = comments[-1]
+        author = latest.user.full_name if latest.user else "A user"
+        parts.append(f"Latest activity: {author} commented '{latest.content[:60]}...'.")
+    else:
+        parts.append("No comments recorded.")
+
+    return " ".join(parts)
+
+
+def generate_ai_task_summary(db: Session, task_id: int) -> str:
+    import anthropic
+    from app.core.config import settings
+
+    task = db.query(Task).filter(Task.id == task_id).first()
+    if not task:
+        return "Task not found."
+
+    comments = task.comments or []
+
+    if not settings.ANTHROPIC_API_KEY:
+        return generate_fallback_summary(task, comments)
+
+    try:
+        comment_lines = []
+        for c in comments:
+            author = c.user.full_name if c.user else "User"
+            comment_lines.append(f"- {author}: {c.content}")
+        comments_str = "\n".join(comment_lines) if comment_lines else "No comments yet."
+
+        prompt = f"""Task Details:
+Title: {task.title}
+Description: {task.description or 'No description provided.'}
+Status: {task.status}
+Priority: {task.priority}
+
+Task Comments:
+{comments_str}
+
+Please generate a brief, professional 1-2 sentence status summary of this task. Keep it direct and action-oriented."""
+
+        client = anthropic.Anthropic(
+            api_key=settings.ANTHROPIC_API_KEY,
+            base_url=settings.ANTHROPIC_BASE_URL,
+        )
+
+        response = client.messages.create(
+            model=settings.CLAUDE_MODEL,
+            temperature=0.3,
+            max_tokens=200,
+            system="You are a helpful project manager assistant. Provide only a 1-2 sentence status summary of the task.",
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt,
+                }
+            ],
+        )
+        return response.content[0].text.strip()
+    except Exception as e:
+        print(f"Error querying Anthropic for task summary: {e}")
+        return generate_fallback_summary(task, comments)

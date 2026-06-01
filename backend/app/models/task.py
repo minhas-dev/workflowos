@@ -71,10 +71,10 @@ class Task(Base):
     )
 
     project_id = Column(
-    Integer,
-    ForeignKey("projects.id"),
-    nullable=True
-)
+        Integer,
+        ForeignKey("projects.id"),
+        nullable=True
+    )
 
     assigned_to = Column(
         Integer,
@@ -88,6 +88,11 @@ class Task(Base):
     )
 
     labels = Column(
+        Text,
+        nullable=True
+    )
+
+    checklist = Column(
         Text,
         nullable=True
     )
