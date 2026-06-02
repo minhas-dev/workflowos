@@ -16,6 +16,7 @@ import {
   Search,
   SlidersHorizontal,
   Trash2,
+  Upload,
   UserRound,
   MailCheck,
   X,
@@ -54,6 +55,25 @@ const validationRules = {
     max: 600,
   },
 };
+
+const allowedProjectFileExtensions = [
+  "pdf",
+  "doc",
+  "docx",
+  "txt",
+  "png",
+  "jpg",
+  "jpeg",
+  "webp",
+  "mp3",
+  "wav",
+  "m4a",
+  "csv",
+  "xlsx",
+  "pptx",
+];
+
+const maxProjectFileSizeBytes = 50 * 1024 * 1024;
 
 
 const statusOptions = [
@@ -251,6 +271,33 @@ function getApiErrorMessage(error) {
   }
 
   return "Failed to save project";
+}
+
+function formatFileSize(bytes) {
+  if (!bytes) return "0 KB";
+  if (bytes >= 1024 * 1024) {
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+  return `${Math.ceil(bytes / 1024)} KB`;
+}
+
+function validateProjectFiles(files) {
+  const invalidFile = files.find((file) => {
+    const extension = file.name.split(".").pop()?.toLowerCase();
+    return !allowedProjectFileExtensions.includes(extension);
+  });
+
+  if (invalidFile) {
+    return `${invalidFile.name} is not a supported project file.`;
+  }
+
+  const oversizedFile = files.find((file) => file.size > maxProjectFileSizeBytes);
+
+  if (oversizedFile) {
+    return `${oversizedFile.name} is too large. Maximum size is 50MB.`;
+  }
+
+  return null;
 }
 
 
@@ -576,10 +623,14 @@ function ProjectModal({
   touchedFields,
   isFormValid,
   completionPercent,
+  stagedFiles,
+  uploadValidationError,
   onClose,
   onChange,
   onBlur,
   onSubmit,
+  onFilesSelected,
+  onRemoveStagedFile,
 }) {
   if (!open) return null;
 
@@ -831,6 +882,90 @@ function ProjectModal({
                 ))}
               </select>
             </label>
+
+            {mode === "create" && (
+              <div className="md:col-span-2">
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                    Attachments
+                  </span>
+                  <span className="text-xs font-semibold text-slate-400">
+                    Optional
+                  </span>
+                </div>
+
+                <div
+                  className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 transition hover:bg-slate-100/60"
+                  onDragOver={(event) => event.preventDefault()}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    onFilesSelected(event.dataTransfer?.files);
+                  }}
+                >
+                  <div className="flex flex-col items-center justify-center gap-2 text-center sm:flex-row sm:text-left">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white text-slate-700 ring-1 ring-slate-200">
+                      <Upload size={18} />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-slate-700">
+                        Drag files here, or{" "}
+                        <label className="cursor-pointer text-blue-600 hover:text-blue-700">
+                          browse
+                          <input
+                            type="file"
+                            multiple
+                            className="hidden"
+                            accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg,.webp,.mp3,.wav,.m4a,.csv,.xlsx,.pptx"
+                            onChange={(event) => {
+                              onFilesSelected(event.target.files);
+                              event.target.value = "";
+                            }}
+                          />
+                        </label>
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        PDF, Office, text, images, audio, and CSV files up to 50MB each.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {uploadValidationError && (
+                  <p className="mt-2 text-xs font-semibold text-rose-600">
+                    {uploadValidationError}
+                  </p>
+                )}
+
+                {stagedFiles.length > 0 && (
+                  <div className="mt-3 space-y-2">
+                    {stagedFiles.map((file, index) => (
+                      <div
+                        key={`${file.name}-${file.size}-${index}`}
+                        className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2"
+                      >
+                        <div className="flex min-w-0 items-center gap-2">
+                          <Paperclip size={15} className="shrink-0 text-slate-500" />
+                          <span className="truncate text-sm font-semibold text-slate-700">
+                            {file.name}
+                          </span>
+                          <span className="shrink-0 text-xs text-slate-400">
+                            {formatFileSize(file.size)}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => onRemoveStagedFile(index)}
+                          className="rounded-lg p-1.5 text-slate-500 transition hover:bg-rose-50 hover:text-rose-600"
+                          title="Remove file"
+                        >
+                          <X size={15} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="mt-7 flex flex-col-reverse gap-3 border-t border-slate-200 dark:border-slate-700 pt-5 sm:flex-row sm:justify-end">
@@ -886,6 +1021,8 @@ export default function ProjectsPage() {
   const [formData, setFormData] = useState(initialFormData);
   const [touchedFields, setTouchedFields] = useState({});
   const [filesProject, setFilesProject] = useState(null);
+  const [stagedProjectFiles, setStagedProjectFiles] = useState([]);
+  const [uploadValidationError, setUploadValidationError] = useState("");
 
   const userRole = localStorage.getItem("user_role");
   const canManageProjects =
@@ -1009,6 +1146,8 @@ export default function ProjectsPage() {
     setEditingProject(null);
     setFormData(initialFormData);
     setTouchedFields({});
+    setStagedProjectFiles([]);
+    setUploadValidationError("");
     setModalOpen(true);
   };
 
@@ -1024,6 +1163,8 @@ export default function ProjectsPage() {
       owner_id: project.owner_id || "",
     });
     setTouchedFields({});
+    setStagedProjectFiles([]);
+    setUploadValidationError("");
     setModalOpen(true);
   };
 
@@ -1032,6 +1173,36 @@ export default function ProjectsPage() {
     setEditingProject(null);
     setFormData(initialFormData);
     setTouchedFields({});
+    setStagedProjectFiles([]);
+    setUploadValidationError("");
+  };
+
+  const handleProjectFilesSelected = (fileList) => {
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
+
+    const validationError = validateProjectFiles(files);
+    if (validationError) {
+      setUploadValidationError(validationError);
+      return;
+    }
+
+    setUploadValidationError("");
+    setStagedProjectFiles((current) => {
+      const existingKeys = new Set(
+        current.map((file) => `${file.name}-${file.size}-${file.lastModified}`)
+      );
+      const nextFiles = files.filter(
+        (file) => !existingKeys.has(`${file.name}-${file.size}-${file.lastModified}`)
+      );
+      return [...current, ...nextFiles];
+    });
+  };
+
+  const removeStagedProjectFile = (indexToRemove) => {
+    setStagedProjectFiles((current) =>
+      current.filter((_, index) => index !== indexToRemove)
+    );
   };
 
   const handleChange = (event) => {
@@ -1123,14 +1294,44 @@ export default function ProjectsPage() {
         );
         toast.success("Project updated successfully");
       } else {
-        await api.post(
+        const createResponse = await api.post(
           "/projects/",
           buildPayload()
         );
+
+        const createdProjectId = createResponse.data?.id;
+        let failedUploadCount = 0;
+
+        if (createdProjectId && stagedProjectFiles.length > 0) {
+          for (const file of stagedProjectFiles) {
+            const form = new FormData();
+            form.append("file", file);
+            try {
+              await api.post(`/projects/${createdProjectId}/files`, form, {
+                headers: { "Content-Type": "multipart/form-data" },
+              });
+            } catch (uploadError) {
+              console.error(uploadError);
+              failedUploadCount += 1;
+            }
+          }
+        }
+
         window.dispatchEvent(
           new CustomEvent("project-created")
         );
-        toast.success("Project created successfully");
+
+        if (failedUploadCount > 0) {
+          toast.error(
+            `Project created, but ${failedUploadCount} file upload${failedUploadCount === 1 ? "" : "s"} failed.`
+          );
+        } else {
+          toast.success(
+            stagedProjectFiles.length > 0
+              ? "Project created with files"
+              : "Project created successfully"
+          );
+        }
       }
 
       closeModal();
@@ -1461,7 +1662,11 @@ export default function ProjectsPage() {
         touchedFields={touchedFields}
         isFormValid={isFormValid}
         completionPercent={completionPercent}
+        stagedFiles={stagedProjectFiles}
+        uploadValidationError={uploadValidationError}
         onSubmit={handleSubmit}
+        onFilesSelected={handleProjectFilesSelected}
+        onRemoveStagedFile={removeStagedProjectFile}
       />
 
       <ProjectFilesDrawer

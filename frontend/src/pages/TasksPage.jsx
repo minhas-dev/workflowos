@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { DndContext } from "@dnd-kit/core";
 import { useSearchParams } from "react-router-dom";
-import { Filter, Plus, Search, Signal, Sparkles } from "lucide-react";
+import { Filter, Loader2, Paperclip, Plus, Search, Signal, Sparkles, X } from "lucide-react";
 
 import toast from "react-hot-toast";
 
@@ -34,6 +34,37 @@ const emptyForm = {
   labels: "",
 };
 
+const allowedFileExtensions = [
+  "pdf",
+  "doc",
+  "docx",
+  "txt",
+  "png",
+  "jpg",
+  "jpeg",
+  "webp",
+  "mp3",
+  "wav",
+  "m4a",
+  "csv",
+  "xlsx",
+  "pptx",
+];
+
+const acceptedFileTypes = allowedFileExtensions.map((ext) => `.${ext}`).join(",");
+
+function getFileExtension(fileName = "") {
+  return fileName.split(".").pop()?.toLowerCase() || "";
+}
+
+function formatFileSize(bytes = 0) {
+  if (bytes < 1024 * 1024) {
+    return `${Math.max(1, Math.ceil(bytes / 1024))} KB`;
+  }
+
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 function normalize(data) {
   if (Array.isArray(data)) return data;
   if (Array.isArray(data?.data)) return data.data;
@@ -54,6 +85,8 @@ export default function TasksPage() {
   const [projectFilter, setProjectFilter] = useState("all");
 
   const [formData, setFormData] = useState(emptyForm);
+  const [pendingTaskFiles, setPendingTaskFiles] = useState([]);
+  const [creatingTask, setCreatingTask] = useState(false);
   const [selectedTask, setSelectedTask] = useState(null);
   const [socketStatus, setSocketStatus] = useState("disconnected");
 
@@ -177,13 +210,45 @@ export default function TasksPage() {
     }));
   }
 
+  function handleTaskFileSelection(event) {
+    const files = Array.from(event.target.files || []);
+    if (files.length === 0) return;
+
+    const validFiles = [];
+    const rejectedFiles = [];
+
+    files.forEach((file) => {
+      const extension = getFileExtension(file.name);
+      if (allowedFileExtensions.includes(extension)) {
+        validFiles.push(file);
+      } else {
+        rejectedFiles.push(file.name);
+      }
+    });
+
+    if (rejectedFiles.length > 0) {
+      toast.error(`Unsupported file type: ${rejectedFiles[0]}`);
+    }
+
+    if (validFiles.length > 0) {
+      setPendingTaskFiles((current) => [...current, ...validFiles]);
+    }
+
+    event.target.value = "";
+  }
+
+  function removePendingTaskFile(index) {
+    setPendingTaskFiles((current) => current.filter((_, currentIndex) => currentIndex !== index));
+  }
+
   async function createTask(event) {
     event.preventDefault();
 
     try {
+      setCreatingTask(true);
       const projectId = formData.project_id ? Number(formData.project_id) : null;
 
-      await api.post("/tasks/", {
+      const response = await api.post("/tasks/", {
         ...formData,
         project_id: projectId,
         assigned_to: formData.assigned_to ? Number(formData.assigned_to) : null,
@@ -194,12 +259,32 @@ export default function TasksPage() {
           .filter(Boolean),
       });
 
+      const createdTaskId = response.data?.id;
+      if (createdTaskId && pendingTaskFiles.length > 0) {
+        await Promise.all(
+          pendingTaskFiles.map((file) => {
+            const uploadForm = new FormData();
+            uploadForm.append("file", file);
+            return api.post(`/tasks/${createdTaskId}/files`, uploadForm, {
+              headers: { "Content-Type": "multipart/form-data" },
+            });
+          })
+        );
+      }
+
       setFormData(emptyForm);
-      toast.success("Task created successfully");
+      setPendingTaskFiles([]);
+      toast.success(
+        pendingTaskFiles.length > 0
+          ? "Task created with files"
+          : "Task created successfully"
+      );
       window.dispatchEvent(new CustomEvent("task-created"));
       fetchData();
     } catch (error) {
       toast.error(error?.response?.data?.detail || "Failed to create task");
+    } finally {
+      setCreatingTask(false);
     }
   }
 
@@ -396,7 +481,7 @@ export default function TasksPage() {
               Create focused work item
             </div>
 
-            <div className="grid gap-3 2xl:grid-cols-[1fr_1.2fr_0.7fr_0.7fr_0.6fr_0.7fr_0.8fr_auto]">
+            <div className="grid gap-3 2xl:grid-cols-[1fr_1.2fr_0.7fr_0.7fr_0.6fr_0.7fr_0.8fr]">
               <input
                 ref={taskTitleRef}
                 name="title"
@@ -468,9 +553,67 @@ export default function TasksPage() {
                 className="control-input"
               />
 
-              <button type="submit" className="button-primary w-full">
-                <Plus size={18} />
-                Create
+            </div>
+
+            <div className="mt-3 rounded-lg border border-dashed border-slate-200 bg-slate-50/60 p-3 dark:border-slate-700 dark:bg-slate-900/30">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+                    <Paperclip size={16} className="text-slate-500" />
+                    Attachments
+                  </div>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    Optional files: pdf, doc, docx, txt, images, audio, csv, xlsx, pptx.
+                  </p>
+                </div>
+                <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">
+                  <Paperclip size={14} />
+                  Upload files
+                  <input
+                    type="file"
+                    multiple
+                    accept={acceptedFileTypes}
+                    onChange={handleTaskFileSelection}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+
+              {pendingTaskFiles.length > 0 && (
+                <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                  {pendingTaskFiles.map((file, index) => (
+                    <div
+                      key={`${file.name}-${file.lastModified}-${index}`}
+                      className="flex min-w-0 items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs dark:border-slate-700 dark:bg-slate-800"
+                    >
+                      <div className="min-w-0">
+                        <div className="truncate font-semibold text-slate-700 dark:text-slate-200">
+                          {file.name}
+                        </div>
+                        <div className="text-slate-400">{formatFileSize(file.size)}</div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removePendingTaskFile(index)}
+                        className="shrink-0 rounded-md p-1 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600"
+                        title="Remove file"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="mt-4 flex justify-end">
+              <button
+                type="submit"
+                className="button-primary w-full sm:w-auto"
+                disabled={creatingTask}
+              >
+                {creatingTask ? <Loader2 size={18} className="animate-spin" /> : <Plus size={18} />}
+                Create Task
               </button>
             </div>
           </form>
@@ -525,4 +668,3 @@ export default function TasksPage() {
     </MainLayout>
   );
 }
-

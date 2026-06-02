@@ -39,6 +39,81 @@ function relativeTime(value) {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
+const allowedFileExtensions = [
+  "pdf",
+  "doc",
+  "docx",
+  "txt",
+  "png",
+  "jpg",
+  "jpeg",
+  "webp",
+  "mp3",
+  "wav",
+  "m4a",
+  "csv",
+  "xlsx",
+  "pptx",
+];
+
+const acceptedFileTypes = allowedFileExtensions.map((ext) => `.${ext}`).join(",");
+
+function getFileExtension(fileName = "") {
+  return fileName.split(".").pop()?.toLowerCase() || "";
+}
+
+function formatFileSize(bytes = 0) {
+  if (bytes < 1024 * 1024) {
+    return `${Math.max(1, Math.ceil(bytes / 1024))} KB`;
+  }
+
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function CommentAttachmentList({ attachments = [], onPreview, onDownload }) {
+  if (!attachments.length) return null;
+
+  return (
+    <div className="mt-2 space-y-1.5">
+      <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+        Attached
+      </div>
+      {attachments.map((attachment) => (
+        <div
+          key={attachment.id}
+          className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs dark:border-slate-700 dark:bg-slate-900/50"
+        >
+          <div className="flex min-w-0 items-center gap-2">
+            <Paperclip size={13} className="shrink-0 text-slate-400" />
+            <span className="truncate font-semibold text-slate-700 dark:text-slate-200">
+              {attachment.original_filename}
+            </span>
+            <span className="shrink-0 text-slate-400">
+              {formatFileSize(attachment.file_size ?? attachment.size ?? 0)}
+            </span>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={() => onPreview(attachment)}
+              className="font-semibold text-slate-500 transition hover:text-slate-900 dark:hover:text-slate-100"
+            >
+              Preview
+            </button>
+            <button
+              type="button"
+              onClick={() => onDownload(attachment)}
+              className="font-semibold text-slate-500 transition hover:text-slate-900 dark:hover:text-slate-100"
+            >
+              Download
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function renderCommentBody(text) {
   if (!text) return "";
   const regex = /@([A-Za-z0-9_.-]+)/g;
@@ -75,6 +150,12 @@ export default function TaskWorkspace({
   
   // Input body states
   const [body, setBody] = useState("");
+  const [commentSubmitting, setCommentSubmitting] = useState(false);
+  const [commentError, setCommentError] = useState("");
+  const [discussionLoading, setDiscussionLoading] = useState(false);
+  const [discussionError, setDiscussionError] = useState("");
+  const [commentFiles, setCommentFiles] = useState([]);
+  const [commentUploading, setCommentUploading] = useState(false);
   const [replyBody, setReplyBody] = useState("");
   const [editBody, setEditBody] = useState("");
 
@@ -121,19 +202,35 @@ export default function TaskWorkspace({
 
   const fetchThread = useCallback(async () => {
     if (!task?.id) return;
-    try {
-      const [commentResponse, attachmentResponse, activityResponse] = await Promise.all([
-        api.get(`/tasks/${task.id}/comments`),
-        api.get("/attachments/", { params: { task_id: task.id } }),
-        api.get("/activities/", { params: { task_id: task.id } }),
-      ]);
 
+    setDiscussionLoading(true);
+    setDiscussionError("");
+
+    try {
+      const commentResponse = await api.get(`/tasks/${task.id}/comments`);
       setComments(Array.isArray(commentResponse.data) ? commentResponse.data : []);
-      setAttachments(Array.isArray(attachmentResponse.data) ? attachmentResponse.data : []);
+    } catch (e) {
+      console.error(e);
+      setComments([]);
+      setDiscussionError("Discussion could not be loaded.");
+    } finally {
+      setDiscussionLoading(false);
+    }
+
+    try {
+      const activityResponse = await api.get("/activities/", { params: { task_id: task.id } });
       setActivities(Array.isArray(activityResponse.data) ? activityResponse.data : []);
     } catch (e) {
       console.error(e);
-      toast.error("Failed to load task discussion and activities");
+      setActivities([]);
+    }
+
+    try {
+      const attachmentResponse = await api.get(`/tasks/${task.id}/files`);
+      setAttachments(Array.isArray(attachmentResponse.data) ? attachmentResponse.data : []);
+    } catch (e) {
+      console.error(e);
+      setAttachments([]);
     }
   }, [task]);
 
@@ -151,6 +248,7 @@ export default function TaskWorkspace({
         setAttachments([]);
         setActivities([]);
         setAiSummary("");
+        setCommentFiles([]);
       }
     }
 
@@ -222,21 +320,58 @@ export default function TaskWorkspace({
     if (!commentBody.trim()) return;
 
     try {
-      await api.post(`/tasks/${task.id}/comments`, {
+      setCommentError("");
+      setCommentSubmitting(true);
+      const response = await api.post(`/tasks/${task.id}/comments`, {
         body: commentBody.trim(),
         parent_id: parentId,
       });
+
+      let attachmentUploadFailed = false;
+      if (!parentId && commentFiles.length > 0 && response.data?.id) {
+        setCommentUploading(true);
+        try {
+          await Promise.all(
+            commentFiles.map((file) => {
+              const form = new FormData();
+              form.append("file", file);
+              return api.post("/attachments/", form, {
+                params: { comment_id: response.data.id },
+                headers: { "Content-Type": "multipart/form-data" },
+              });
+            })
+          );
+        } catch {
+          attachmentUploadFailed = true;
+        }
+      }
+
       if (parentId) {
         setReplyBody("");
         setReplyingToCommentId(null);
       } else {
         setBody("");
+        setCommentFiles([]);
       }
       await fetchThread();
       onChanged?.();
-      toast.success(parentId ? "Reply posted" : "Comment posted");
+      if (attachmentUploadFailed) {
+        toast.error("Comment posted, but attachment upload failed");
+        return;
+      }
+
+      toast.success(
+        !parentId && commentFiles.length > 0
+          ? "Comment posted with attachment"
+          : parentId
+            ? "Reply posted"
+            : "Comment posted"
+      );
     } catch (error) {
-      toast.error(error?.response?.data?.detail || "Failed to add comment");
+      setCommentError(error?.response?.data?.detail || "Could not post comment. Please try again.");
+    } finally {
+      setCommentSubmitting(false);
+      setCommentUploading(false);
     }
   }
 
@@ -344,15 +479,47 @@ export default function TaskWorkspace({
   async function handleDeleteAttachmentConfirm() {
     if (!deletingAttachment) return;
     try {
-      await api.delete(`/attachments/${deletingAttachment.id}`);
-      toast.success("Attachment deleted");
+      await api.delete(`/tasks/${task.id}/files/${deletingAttachment.id}`);
+      toast.success("File deleted");
       fetchThread();
       onChanged?.();
     } catch (e) {
-      toast.error(e?.response?.data?.detail || "Failed to delete attachment");
+      toast.error(e?.response?.data?.detail || "Failed to delete file");
     } finally {
       setDeletingAttachment(null);
     }
+  }
+
+  function validateFiles(files) {
+    const validFiles = [];
+    const rejectedFiles = [];
+
+    files.forEach((file) => {
+      const extension = getFileExtension(file.name);
+      if (allowedFileExtensions.includes(extension)) {
+        validFiles.push(file);
+      } else {
+        rejectedFiles.push(file.name);
+      }
+    });
+
+    if (rejectedFiles.length > 0) {
+      toast.error(`Unsupported file type: ${rejectedFiles[0]}`);
+    }
+
+    return validFiles;
+  }
+
+  function handleCommentFileSelection(event) {
+    const validFiles = validateFiles(Array.from(event.target.files || []));
+    if (validFiles.length > 0) {
+      setCommentFiles((current) => [...current, ...validFiles]);
+    }
+    event.target.value = "";
+  }
+
+  function removeCommentFile(index) {
+    setCommentFiles((current) => current.filter((_, currentIndex) => currentIndex !== index));
   }
 
   async function uploadFile(file) {
@@ -376,7 +543,7 @@ export default function TaskWorkspace({
 
       await fetchThread();
       onChanged?.();
-      toast.success("File attached");
+      toast.success("File uploaded");
     } catch (error) {
       toast.error(error?.response?.data?.detail || "Upload failed");
     } finally {
@@ -385,11 +552,36 @@ export default function TaskWorkspace({
     }
   }
 
+  async function uploadFiles(files) {
+    const validFiles = validateFiles(Array.from(files || []));
+    if (validFiles.length === 0 || uploading) return;
+
+    for (const file of validFiles) {
+      await uploadFile(file);
+    }
+  }
+
   async function onFileInputChange(event) {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    await uploadFile(file);
+    await uploadFiles(event.target.files);
     event.target.value = "";
+  }
+
+  async function downloadAttachment(attachment) {
+    try {
+      const response = await api.get(`/attachments/${attachment.id}/download`, {
+        responseType: "blob",
+      });
+      const objectUrl = URL.createObjectURL(response.data);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = attachment.original_filename || "task-file";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || "Failed to download file");
+    }
   }
 
   async function handleTaskDeleteConfirm() {
@@ -635,25 +827,30 @@ export default function TaskWorkspace({
               </div>
             </div>
 
-            {/* Attachments Section */}
+            {/* Task Files Section */}
             <div
               className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/40 dark:bg-slate-900/20 p-4 space-y-3"
               onDragOver={(e) => e.preventDefault()}
               onDrop={async (e) => {
                 e.preventDefault();
-                const f = e.dataTransfer?.files?.[0];
-                if (!f || uploading) return;
-                await uploadFile(f);
+                if (uploading) return;
+                await uploadFiles(e.dataTransfer?.files);
               }}
             >
               <div className="flex items-center justify-between">
                 <span className="text-sm font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
                   <Paperclip size={16} />
-                  Attachments
+                  Task Files
                 </span>
                 <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-slate-950 dark:bg-slate-700 hover:bg-slate-800 px-3 py-1.5 text-xs font-semibold text-white transition">
-                  Attach
-                  <input type="file" className="hidden" onChange={onFileInputChange} />
+                  Upload
+                  <input
+                    type="file"
+                    multiple
+                    accept={acceptedFileTypes}
+                    className="hidden"
+                    onChange={onFileInputChange}
+                  />
                 </label>
               </div>
 
@@ -669,7 +866,7 @@ export default function TaskWorkspace({
 
               <div className="grid gap-2">
                 {attachments.length === 0 ? (
-                  <p className="text-xs text-slate-400 py-2">No files attached. Drag & drop files here to upload.</p>
+                  <p className="text-xs text-slate-400 py-2">No task files yet. Drag and drop files here to upload.</p>
                 ) : (
                   attachments.map((attachment) => (
                     <AttachmentCard
@@ -680,13 +877,7 @@ export default function TaskWorkspace({
                         setPreviewAttachment(attachment);
                         setPreviewOpen(true);
                       }}
-                      onDownload={() => {
-                        window.open(
-                          `${api.defaults.baseURL}/attachments/${attachment.id}/download`,
-                          "_blank",
-                          "noopener,noreferrer"
-                        );
-                      }}
+                      onDownload={() => downloadAttachment(attachment)}
                       onDelete={() => setDeletingAttachment(attachment)}
                     />
                   ))
@@ -814,6 +1005,14 @@ export default function TaskWorkspace({
                                   {renderCommentBody(item.content)}
                                 </p>
                               )}
+                              <CommentAttachmentList
+                                attachments={item.raw.attachments || []}
+                                onPreview={(attachment) => {
+                                  setPreviewAttachment(attachment);
+                                  setPreviewOpen(true);
+                                }}
+                                onDownload={downloadAttachment}
+                              />
                             </div>
                           </div>
 
@@ -893,6 +1092,14 @@ export default function TaskWorkspace({
                                       {renderCommentBody(child.body)}
                                     </p>
                                   )}
+                                  <CommentAttachmentList
+                                    attachments={child.attachments || []}
+                                    onPreview={(attachment) => {
+                                      setPreviewAttachment(attachment);
+                                      setPreviewOpen(true);
+                                    }}
+                                    onDownload={downloadAttachment}
+                                  />
                                 </div>
                               </div>
                             ))}
@@ -925,22 +1132,64 @@ export default function TaskWorkspace({
 
               {/* Comment submission form */}
               <div className="relative pt-3">
-                <form onSubmit={submitComment} className="flex gap-3">
-                  <textarea
-                    value={body}
-                    onChange={(event) => handleTextareaChange(event, "comment")}
-                    rows="2"
-                    placeholder="Write a comment or post an update..."
-                    className="w-full text-sm rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 px-4 py-3 text-slate-800 dark:text-slate-200 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200 dark:focus:ring-slate-700 resize-none"
-                  />
-                  <button
-                    type="submit"
-                    disabled={!body.trim()}
-                    className="inline-flex h-[52px] w-12 items-center justify-center rounded-xl bg-slate-950 hover:bg-slate-800 dark:bg-slate-700 dark:hover:bg-slate-600 text-white transition disabled:opacity-50"
-                    title="Send comment"
-                  >
-                    <Send size={16} />
-                  </button>
+                <form onSubmit={submitComment} className="space-y-2">
+                  <div className="flex gap-3">
+                    <textarea
+                      value={body}
+                      onChange={(event) => handleTextareaChange(event, "comment")}
+                      rows="2"
+                      placeholder="Write a comment or post an update..."
+                      className="w-full text-sm rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 px-4 py-3 text-slate-800 dark:text-slate-200 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200 dark:focus:ring-slate-700 resize-none"
+                    />
+                    <div className="flex flex-col gap-2">
+                      <label
+                        className="inline-flex h-12 w-12 cursor-pointer items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+                        title="Attach file to comment"
+                      >
+                        <Paperclip size={16} />
+                        <input
+                          type="file"
+                          multiple
+                          accept={acceptedFileTypes}
+                          className="hidden"
+                          onChange={handleCommentFileSelection}
+                        />
+                      </label>
+                      <button
+                        type="submit"
+                        disabled={!body.trim() || commentUploading}
+                        className="inline-flex h-12 w-12 items-center justify-center rounded-xl bg-slate-950 hover:bg-slate-800 dark:bg-slate-700 dark:hover:bg-slate-600 text-white transition disabled:opacity-50"
+                        title="Send comment"
+                      >
+                        {commentUploading ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {commentFiles.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {commentFiles.map((file, index) => (
+                        <div
+                          key={`${file.name}-${file.lastModified}-${index}`}
+                          className="flex max-w-full items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs dark:border-slate-700 dark:bg-slate-900/50"
+                        >
+                          <Paperclip size={12} className="shrink-0 text-slate-400" />
+                          <span className="max-w-[220px] truncate font-semibold text-slate-600 dark:text-slate-300">
+                            {file.name}
+                          </span>
+                          <span className="shrink-0 text-slate-400">{formatFileSize(file.size)}</span>
+                          <button
+                            type="button"
+                            onClick={() => removeCommentFile(index)}
+                            className="rounded p-0.5 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600"
+                            title="Remove attachment"
+                          >
+                            <X size={12} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </form>
 
                 {/* Mentions autocomplete dropdown popup */}
@@ -1177,8 +1426,8 @@ export default function TaskWorkspace({
       {/* Delete Attachment Confirmation Modal */}
       <DeleteConfirmationModal
         isOpen={Boolean(deletingAttachment)}
-        title="Delete attachment?"
-        description="This action cannot be undone and will permanently remove this attachment from the task."
+        title="Delete task file?"
+        description="This action cannot be undone and will permanently remove this file from the task."
         itemName={deletingAttachment?.original_filename || ""}
         onConfirm={handleDeleteAttachmentConfirm}
         onCancel={() => setDeletingAttachment(null)}
@@ -1189,7 +1438,7 @@ export default function TaskWorkspace({
       <DeleteConfirmationModal
         isOpen={deletingTaskConfirm}
         title="Delete task?"
-        description="This action cannot be undone and will permanently remove this task and all its comments/attachments."
+        description="This action cannot be undone and will permanently remove this task, comments, and files."
         itemName={task.title || ""}
         onConfirm={handleTaskDeleteConfirm}
         onCancel={() => setDeletingTaskConfirm(false)}

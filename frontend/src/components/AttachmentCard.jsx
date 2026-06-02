@@ -37,7 +37,7 @@ export default function AttachmentCard({
           </div>
           <div className="mt-0.5 flex items-center gap-2 text-xs text-[var(--text-muted)]">
             <span>{mimeType || "unknown"}</span>
-            <span>•</span>
+            <span>|</span>
             <span>{Math.ceil(sizeBytes / 1024)} KB</span>
           </div>
         </div>
@@ -67,4 +67,3 @@ export default function AttachmentCard({
     </div>
   );
 }
-

@@ -376,16 +376,23 @@ def list_task_files(
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    dummy = Attachment(task_id=task_id, project_id=task.project_id, uploader_id=task.assigned_to or 0)
-    ensure_can_download_attachment(db, dummy, current_user)
-
     attachments = (
         db.query(Attachment)
         .filter(Attachment.task_id == task_id)
+        .filter(Attachment.comment_id.is_(None))
         .order_by(Attachment.uploaded_at.desc())
         .all()
     )
-    return attachments
+
+    accessible = []
+    for attachment in attachments:
+        try:
+            ensure_can_download_attachment(db, attachment, current_user)
+            accessible.append(attachment)
+        except Exception:
+            continue
+
+    return accessible
 
 
 @router.post("/{task_id}/files")
@@ -483,4 +490,3 @@ def get_task_ai_summary(
 
     summary = generate_ai_task_summary(db, task_id)
     return {"summary": summary}
-

@@ -7,6 +7,44 @@ import AttachmentCard from "./AttachmentCard";
 import AttachmentPreviewModal from "./AttachmentPreviewModal";
 import DeleteConfirmationModal from "./DeleteConfirmationModal";
 
+const allowedProjectFileExtensions = [
+  "pdf",
+  "doc",
+  "docx",
+  "txt",
+  "png",
+  "jpg",
+  "jpeg",
+  "webp",
+  "mp3",
+  "wav",
+  "m4a",
+  "csv",
+  "xlsx",
+  "pptx",
+];
+
+const maxProjectFileSizeBytes = 50 * 1024 * 1024;
+
+function validateProjectFiles(files) {
+  const invalidFile = files.find((file) => {
+    const extension = file.name.split(".").pop()?.toLowerCase();
+    return !allowedProjectFileExtensions.includes(extension);
+  });
+
+  if (invalidFile) {
+    return `${invalidFile.name} is not a supported project file.`;
+  }
+
+  const oversizedFile = files.find((file) => file.size > maxProjectFileSizeBytes);
+
+  if (oversizedFile) {
+    return `${oversizedFile.name} is too large. Maximum size is 50MB.`;
+  }
+
+  return null;
+}
+
 export default function ProjectFilesDrawer({
   project,
   open,
@@ -16,6 +54,7 @@ export default function ProjectFilesDrawer({
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(null);
+  const [uploadError, setUploadError] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
 
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -54,6 +93,7 @@ export default function ProjectFilesDrawer({
       } else {
         setAttachments([]);
         setSearchQuery("");
+        setUploadError("");
       }
     }
 
@@ -64,31 +104,45 @@ export default function ProjectFilesDrawer({
     };
   }, [open, project?.id, fetchFiles]);
 
-  async function uploadFile(file) {
-    if (!file || !project?.id) return;
+  async function uploadFiles(fileList) {
+    const files = Array.from(fileList || []);
+    if (!files.length || !project?.id) return;
 
-    const form = new FormData();
-    form.append("file", file);
+    const validationError = validateProjectFiles(files);
+    if (validationError) {
+      setUploadError(validationError);
+      toast.error(validationError);
+      return;
+    }
 
     try {
       setUploading(true);
       setUploadProgress(0);
+      setUploadError("");
 
-      await api.post(`/projects/${project.id}/files`, form, {
-        headers: { "Content-Type": "multipart/form-data" },
-        onUploadProgress: (p) => {
-          if (!p?.total) return;
-          const pct = Math.round((p.loaded * 100) / p.total);
-          setUploadProgress(pct);
-        },
-      });
+      for (let index = 0; index < files.length; index += 1) {
+        const form = new FormData();
+        form.append("file", files[index]);
 
-      toast.success("File uploaded successfully");
+        await api.post(`/projects/${project.id}/files`, form, {
+          headers: { "Content-Type": "multipart/form-data" },
+          onUploadProgress: (p) => {
+            if (!p?.total) return;
+            const filePct = Math.round((p.loaded * 100) / p.total);
+            const pct = Math.round(((index + filePct / 100) / files.length) * 100);
+            setUploadProgress(pct);
+          },
+        });
+      }
+
+      toast.success(files.length === 1 ? "File uploaded successfully" : "Files uploaded successfully");
       fetchFiles();
       window.dispatchEvent(new CustomEvent("project-updated"));
     } catch (error) {
       console.error(error);
-      toast.error(error?.response?.data?.detail || "Upload failed");
+      const message = error?.response?.data?.detail || "Upload failed";
+      setUploadError(message);
+      toast.error(message);
     } finally {
       setUploading(false);
       setUploadProgress(null);
@@ -96,10 +150,27 @@ export default function ProjectFilesDrawer({
   }
 
   function onFileInputChange(event) {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    uploadFile(file);
+    uploadFiles(event.target.files);
     event.target.value = "";
+  }
+
+  async function downloadFile(file) {
+    try {
+      const res = await api.get(`/attachments/${file.id}/download`, {
+        responseType: "blob",
+      });
+      const blobUrl = URL.createObjectURL(res.data);
+      const link = document.createElement("a");
+      link.href = blobUrl;
+      link.download = file.original_filename || "project-file";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(blobUrl);
+    } catch (error) {
+      console.error(error);
+      toast.error(error?.response?.data?.detail || "Failed to download file");
+    }
   }
 
   async function handleDeleteConfirm() {
@@ -173,9 +244,8 @@ export default function ProjectFilesDrawer({
             onDragOver={(e) => e.preventDefault()}
             onDrop={async (e) => {
               e.preventDefault();
-              const file = e.dataTransfer?.files?.[0];
-              if (!file || uploading) return;
-              await uploadFile(file);
+              if (uploading) return;
+              await uploadFiles(e.dataTransfer?.files);
             }}
           >
             <div className="flex flex-col items-center justify-center gap-2">
@@ -188,6 +258,8 @@ export default function ProjectFilesDrawer({
                   browse
                   <input
                     type="file"
+                    multiple
+                    accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg,.webp,.mp3,.wav,.m4a,.csv,.xlsx,.pptx"
                     className="hidden"
                     onChange={onFileInputChange}
                     disabled={uploading}
@@ -195,7 +267,7 @@ export default function ProjectFilesDrawer({
                 </label>
               </p>
               <p className="text-xs text-slate-400 dark:text-slate-500">
-                Supports PDF, DOCX, PPTX, Image, SQL, TXT, JSON (Max 50MB)
+                Supports PDF, DOC/DOCX, TXT, images, audio, CSV, XLSX, and PPTX (Max 50MB each)
               </p>
             </div>
 
@@ -209,6 +281,12 @@ export default function ProjectFilesDrawer({
                   />
                 </div>
               </div>
+            )}
+
+            {uploadError && (
+              <p className="mt-3 text-xs font-semibold text-rose-600">
+                {uploadError}
+              </p>
             )}
           </div>
         </div>
@@ -243,8 +321,7 @@ export default function ProjectFilesDrawer({
                     setPreviewOpen(true);
                   }}
                   onDownload={() => {
-                    const downloadUrl = `${api.defaults.baseURL || ""}/attachments/${file.id}/download`;
-                    window.open(downloadUrl, "_blank", "noopener,noreferrer");
+                    downloadFile(file);
                   }}
                   onDelete={() => setDeletingAttachment(file)}
                 />

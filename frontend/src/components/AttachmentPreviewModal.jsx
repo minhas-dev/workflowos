@@ -12,6 +12,7 @@ export default function AttachmentPreviewModal({
   attachment,
 }) {
   const [objectUrl, setObjectUrl] = useState(null);
+  const [textPreview, setTextPreview] = useState("");
   const [loading, setLoading] = useState(false);
 
   const mimeType = attachment?.mime_type || attachment?.content_type;
@@ -25,6 +26,7 @@ export default function AttachmentPreviewModal({
     Promise.resolve().then(() => {
       setLoading(true);
       setObjectUrl(null);
+      setTextPreview("");
     });
 
 
@@ -38,6 +40,16 @@ export default function AttachmentPreviewModal({
 
         nextObjectUrl = URL.createObjectURL(res.data);
         setObjectUrl(nextObjectUrl);
+
+        const nextMimeType = attachment?.mime_type || attachment?.content_type;
+        if (
+          nextMimeType === "text/plain" ||
+          nextMimeType === "text/csv" ||
+          attachment?.original_filename?.toLowerCase().endsWith(".csv") ||
+          attachment?.original_filename?.toLowerCase().endsWith(".txt")
+        ) {
+          setTextPreview(await res.data.text());
+        }
       } catch {
         toast.error("Failed to load preview");
       } finally {
@@ -54,6 +66,7 @@ export default function AttachmentPreviewModal({
         if (prev) URL.revokeObjectURL(prev);
         return null;
       });
+      setTextPreview("");
       if (nextObjectUrl) URL.revokeObjectURL(nextObjectUrl);
     };
   }, [open, attachment?.id]);
@@ -65,6 +78,8 @@ export default function AttachmentPreviewModal({
 
   const isImage = mimeType?.startsWith("image/");
   const isPdf = mimeType === "application/pdf" || mimeType?.includes("pdf");
+  const isText = mimeType === "text/plain" || mimeType === "text/csv";
+  const isAudio = mimeType?.startsWith("audio/");
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
@@ -109,9 +124,23 @@ export default function AttachmentPreviewModal({
             />
           )}
 
-          {!loading && objectUrl && !isImage && !isPdf && (
+          {!loading && objectUrl && isText && (
+            <pre className="max-h-[68vh] overflow-auto whitespace-pre-wrap rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-800">
+              {textPreview}
+            </pre>
+          )}
+
+          {!loading && objectUrl && isAudio && (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <audio controls src={objectUrl} className="w-full">
+                <track kind="captions" />
+              </audio>
+            </div>
+          )}
+
+          {!loading && objectUrl && !isImage && !isPdf && !isText && !isAudio && (
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-              Preview is available for images and PDFs only.
+              Preview is available for images, PDFs, text, CSV, and audio files. Download this file to open it locally.
             </div>
           )}
 

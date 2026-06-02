@@ -6,12 +6,17 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.models.task import Task
 from app.models.task_comment import TaskComment
+from app.models.project_member import ProjectMember
 from app.models.user import User
 from app.services.activity_service import create_activity
 from app.services.notification_service import create_notification, deliver_notification
 
 MENTION_PATTERN = re.compile(r"@([A-Za-z0-9_.-]+)")
 MANAGEMENT_ROLES = ["Admin", "Manager"]
+
+
+def effective_role(user: User | None, role: str | None) -> str:
+    return role or (user.role if user else "")
 
 
 def resolve_mentioned_users(db: Session, task: Task, handles: list[str]) -> list[int]:
@@ -58,17 +63,34 @@ def extract_mentions(body: str):
 
 
 def can_access_task(db: Session, task: Task, user: User | None, role: str | None):
-    if role in MANAGEMENT_ROLES:
+    if effective_role(user, role) in MANAGEMENT_ROLES:
         return True
 
     if not user:
         return False
 
-    return task.assigned_to == user.id or task.project and task.project.owner_id == user.id
+    if task.assigned_to == user.id:
+        return True
+
+    if task.project and task.project.owner_id == user.id:
+        return True
+
+    if task.project_id is not None:
+        membership = (
+            db.query(ProjectMember)
+            .filter(
+                ProjectMember.project_id == task.project_id,
+                ProjectMember.user_id == user.id,
+            )
+            .first()
+        )
+        return membership is not None
+
+    return False
 
 
 def can_mutate_comment(comment: TaskComment, user: User | None, role: str | None):
-    return role in MANAGEMENT_ROLES or (user and comment.author_id == user.id)
+    return effective_role(user, role) in MANAGEMENT_ROLES or (user and comment.author_id == user.id)
 
 
 def list_comments(db: Session, task_id: int, user: User | None, role: str | None):

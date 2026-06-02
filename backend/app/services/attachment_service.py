@@ -35,23 +35,48 @@ TEMP_DIR = UPLOAD_ROOT / "temp"
 # SECURITY / VALIDATION
 # ============================================================
 
-MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024  # production-safe default; adjust as needed
+MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024  # 50MB per project file
 
-# Supported by requirement (plus common variants)
+# Project/task attachments supported by WorkflowOS.
 ALLOWED_MIME_TYPES: set[str] = {
+    "",
     "image/png",
     "image/jpeg",
     "image/webp",
-    "image/gif",
     "application/pdf",
     "text/plain",
     "text/csv",
-    "application/zip",
-    "application/x-zip-compressed",
+    "application/csv",
+    "application/vnd.ms-excel",
+    "audio/mpeg",
+    "audio/mp3",
+    "audio/m4a",
+    "audio/wav",
+    "audio/x-wav",
+    "audio/mp4",
+    "audio/x-m4a",
+    "application/msword",  # doc
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",  # docx
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",  # xlsx
-    # video (mp4)
-    "video/mp4",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",  # pptx
+    "application/octet-stream",
+}
+
+ALLOWED_EXTENSIONS: set[str] = {
+    "pdf",
+    "doc",
+    "docx",
+    "txt",
+    "png",
+    "jpg",
+    "jpeg",
+    "webp",
+    "mp3",
+    "wav",
+    "m4a",
+    "csv",
+    "xlsx",
+    "pptx",
 }
 
 
@@ -92,6 +117,11 @@ def _generate_stored_filename(original_name: str) -> str:
     return stored
 
 
+def _extension_is_allowed(original_name: str) -> bool:
+    _, ext = _split_extension(_sanitize_original_filename(original_name))
+    return ext.lower() in ALLOWED_EXTENSIONS
+
+
 def _safe_write_bytes(dest: Path, data: bytes) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
     # Atomic-ish write: write temp then replace
@@ -99,6 +129,10 @@ def _safe_write_bytes(dest: Path, data: bytes) -> None:
     with tmp.open("wb") as f:
         f.write(data)
     tmp.replace(dest)
+
+
+def _can_manage_project_files(user: User | None) -> bool:
+    return bool(user and user.role in {"Admin", "Manager"})
 
 
 def _ensure_target_exists_and_accessible(
@@ -126,6 +160,9 @@ def _ensure_target_exists_and_accessible(
     if comment_id and not comment:
         raise HTTPException(status_code=404, detail="Comment not found")
 
+    if comment and task is None:
+        task = db.query(Task).filter(Task.id == comment.task_id).first()
+
     effective_project_id = project_id or (task.project_id if task else None)
     effective_task_id = task_id or (comment.task_id if comment else None)
 
@@ -142,7 +179,11 @@ def _ensure_target_exists_and_accessible(
             )
             .first()
         )
-        if membership is None and (project and project.owner_id != user.id):
+        if (
+            membership is None
+            and not _can_manage_project_files(user)
+            and (project and project.owner_id != user.id)
+        ):
             raise HTTPException(status_code=403, detail="Permission denied")
 
     return project, task, comment, effective_project_id, effective_task_id
@@ -198,13 +239,17 @@ def save_upload(
     original_filename = file.filename or "attachment"
     mime_type = (file.content_type or "").lower()
 
-    if mime_type not in ALLOWED_MIME_TYPES:
-        raise HTTPException(status_code=415, detail="File type is not allowed")
+    if mime_type not in ALLOWED_MIME_TYPES or not _extension_is_allowed(original_filename):
+        allowed = ", ".join(sorted(ALLOWED_EXTENSIONS))
+        raise HTTPException(
+            status_code=415,
+            detail=f"Unsupported file type. Allowed formats: {allowed}.",
+        )
 
     # Read bytes with hard limit (avoid zip bombs/oversized uploads)
     content = file.file.read(MAX_FILE_SIZE_BYTES + 1)
     if len(content) > MAX_FILE_SIZE_BYTES:
-        raise HTTPException(status_code=413, detail="File is too large")
+        raise HTTPException(status_code=413, detail="File is too large. Maximum size is 50MB.")
 
     stored_filename = _generate_stored_filename(original_filename)
 
@@ -314,7 +359,7 @@ def ensure_can_download_attachment(db: Session, attachment: Attachment, user: Us
             )
             .first()
         )
-        if membership is None:
+        if membership is None and not _can_manage_project_files(user):
             project = db.query(Project).filter(Project.id == attachment.project_id).first()
             if not project or project.owner_id != user.id:
                 raise HTTPException(status_code=403, detail="Permission denied")

@@ -561,6 +561,8 @@ def list_project_files(
     attachments = (
         db.query(Attachment)
         .filter(Attachment.project_id == project_id)
+        .filter(Attachment.task_id.is_(None))
+        .filter(Attachment.comment_id.is_(None))
         .order_by(Attachment.uploaded_at.desc())
         .all()
     )
@@ -632,6 +634,8 @@ def delete_project_file(
         db.query(Attachment)
         .filter(Attachment.id == file_id)
         .filter(Attachment.project_id == project_id)
+        .filter(Attachment.task_id.is_(None))
+        .filter(Attachment.comment_id.is_(None))
         .first()
     )
     if not attachment:
