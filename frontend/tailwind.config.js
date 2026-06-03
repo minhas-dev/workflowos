@@ -7,6 +7,7 @@ export default {
       fontFamily: {
         sans: ["Plus Jakarta Sans", "Inter", "system-ui", "sans-serif"],
         mono: ["JetBrains Mono", "Fira Code", "monospace"],
+        poppins: ["Poppins", "sans-serif"],
       },
       colors: {
         brand: {
