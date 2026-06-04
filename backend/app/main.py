@@ -73,6 +73,8 @@ from app.models.integration import (
     WebhookLog,
 )
 from app.models.task_comment import TaskComment
+from app.models.contact import ContactMessage
+from app.models.job_application import JobApplication
 
 from app.api.routes.admin import router as admin_router
 
@@ -121,6 +123,8 @@ from app.api.routes.analytics import router as analytics_router
 from app.api.routes.executive_reports import router as executive_reports_router
 from app.api.routes.demo import router as demo_router
 from app.api.routes.summarizer import router as summarizer_router
+from app.api.routes.contact import router as contact_router
+from app.api.routes.careers import router as careers_router
 
 
 
@@ -935,6 +939,18 @@ app.include_router(
 app.include_router(
     summarizer_router,
     prefix="/api/v1"
+)
+
+app.include_router(
+    contact_router,
+    prefix="/api/v1/contact",
+    tags=["Contact"]
+)
+
+app.include_router(
+    careers_router,
+    prefix="/api/v1/careers",
+    tags=["Careers"]
 )
 
 

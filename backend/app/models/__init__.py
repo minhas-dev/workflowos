@@ -65,3 +65,7 @@ from app.models.ai_copilot import (
     AIMessage,
     AIUploadedFile,
 )
+
+from app.models.contact import ContactMessage
+from app.models.job_application import JobApplication
+

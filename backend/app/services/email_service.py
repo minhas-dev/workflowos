@@ -1,8 +1,8 @@
 import smtplib
-
 from email.mime.multipart import MIMEMultipart
-
 from email.mime.text import MIMEText
+from email.mime.base import MIMEBase
+from email import encoders
 
 from app.core.config import settings
 
@@ -16,6 +16,7 @@ def send_email(
     subject: str,
     html_body: str,
     text_body: str | None = None,
+    attachments: list[dict] | None = None, # list of {"filename": str, "content": bytes}
 ) -> bool:
     """Send email via SMTP.
 
@@ -38,15 +39,36 @@ def send_email(
             )
             return False
 
-        msg = MIMEMultipart("alternative")
-        msg["From"] = settings.email_from
-        msg["To"] = receiver_email
-        msg["Subject"] = subject
+        if attachments:
+            msg = MIMEMultipart("mixed")
+            msg["From"] = settings.email_from
+            msg["To"] = receiver_email
+            msg["Subject"] = subject
 
-        if text_body:
-            msg.attach(MIMEText(text_body, "plain"))
+            body_part = MIMEMultipart("alternative")
+            if text_body:
+                body_part.attach(MIMEText(text_body, "plain"))
+            body_part.attach(MIMEText(html_body, "html"))
+            msg.attach(body_part)
 
-        msg.attach(MIMEText(html_body, "html"))
+            for att in attachments:
+                part = MIMEBase("application", "octet-stream")
+                part.set_payload(att["content"])
+                encoders.encode_base64(part)
+                part.add_header(
+                    "Content-Disposition",
+                    f"attachment; filename={att['filename']}",
+                )
+                msg.attach(part)
+        else:
+            msg = MIMEMultipart("alternative")
+            msg["From"] = settings.email_from
+            msg["To"] = receiver_email
+            msg["Subject"] = subject
+
+            if text_body:
+                msg.attach(MIMEText(text_body, "plain"))
+            msg.attach(MIMEText(html_body, "html"))
 
         with smtplib.SMTP(
             settings.smtp_host,
@@ -79,6 +101,7 @@ def send_email(
             f"subject={subject} error={e}"
         )
         return False
+
 
 
 # =========================================
